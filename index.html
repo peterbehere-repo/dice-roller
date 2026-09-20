@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dice Table v1.2.4</title>
+<title>Dice Table v1.2.5</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -75,7 +75,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.4</span></h1>
+  <h1>Dice Table <span id="ver">v1.2.5</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -676,10 +676,10 @@ function addWall(w, h, d, x, y, z, rotX = 0) {
   return m;
 }
 const WALL_X = 11.5, BACK_Z = -13, FRONT_Z = 13.5;
-const wallH = 1.6, wallThk = 0.5;
+const wallH = 2.4, wallThk = 0.9;
 addWall(TABLE_W + 2*wallThk, wallH, wallThk, 0, wallH/2, BACK_Z);
-addWall(wallThk, wallH, TABLE_L, -WALL_X, wallH/2, 0);
-addWall(wallThk, wallH, TABLE_L, WALL_X, wallH/2, 0);
+addWall(wallThk, wallH, TABLE_L + 2*wallThk, -WALL_X, wallH/2, 0);
+addWall(wallThk, wallH, TABLE_L + 2*wallThk, WALL_X, wallH/2, 0);
 addWall(TABLE_W + 2*wallThk, wallH, wallThk, 0, wallH/2, FRONT_Z);
 
 /* ---------------- physics ---------------- */
@@ -702,16 +702,22 @@ world.addContactMaterial(new CANNON.ContactMaterial(dieMat, dieMat, { friction:0
 const floorBody = new CANNON.Body({ mass:0, shape:new CANNON.Plane(), material:groundMat });
 floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
 world.addBody(floorBody);
-function wallBody(w, h, d, x, y, z, rotX = 0) {
-  const b = new CANNON.Body({ mass:0, shape:new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2)), material:wallPhysMat });
-  b.position.set(x, y, z);
-  b.quaternion.setFromEuler(rotX, 0, 0);
+// physics walls: planes (infinite on one side) so tunneling is impossible.
+// Normals point inward. Positioned just outside the visual walls' inner faces.
+function wallPlane(nx, nz, px, pz) {
+  // Plane's normal is local +z, rotated to (nx,0,nz); points INTO the tray,
+  // so the solid half-space (outside) is behind it. Position is cosmetic
+  // for a plane but set it anyway for clarity.
+  const b = new CANNON.Body({ mass:0, shape:new CANNON.Plane(), material:wallPhysMat });
+  b.quaternion.setFromVectors(new CANNON.Vec3(0,0,1), new CANNON.Vec3(nx,0,nz));
+  b.position.set(px, 0, pz);
   world.addBody(b);
 }
-wallBody(TABLE_W + 2*wallThk, wallH, wallThk, 0, wallH/2, BACK_Z);
-wallBody(wallThk, wallH, TABLE_L, -WALL_X, wallH/2, 0);
-wallBody(wallThk, wallH, TABLE_L, WALL_X, wallH/2, 0);
-wallBody(TABLE_W + 2*wallThk, wallH, wallThk, 0, wallH/2, FRONT_Z);
+// align to the VISUAL walls' inner faces (wallThk=0.9), so dice rest flush against the wood
+wallPlane(-1, 0, WALL_X - wallThk/2, 0);
+wallPlane(1, 0, -(WALL_X - wallThk/2), 0);
+wallPlane(0, 1, 0, BACK_Z + wallThk/2);
+wallPlane(0, -1, 0, FRONT_Z - wallThk/2);
 
 /* ---------------- dice ---------------- */
 const typeCache = {};
@@ -1090,6 +1096,16 @@ function physStep() {
   world.step(1 / 60, 1 / 60, 4);
   simTime += 1 / 60;
   for (const d of activeDice) {
+    // safety net: reclaim any die that tunneled out of the tray
+    const p = d.body.position;
+    if (p.y < -2 || Math.abs(p.x) > WALL_X + 1 || p.z < BACK_Z - 1 || p.z > FRONT_Z + 1) {
+      p.set((Math.random()-0.5)*8, 3.5, (Math.random()-0.5)*8);
+      d.body.velocity.set((Math.random()-0.5)*3, -1, (Math.random()-0.5)*3);
+      d.body.angularVelocity.set(Math.random()*6-3, Math.random()*6-3, Math.random()*6-3);
+      d.done = false; d.restFrames = 0;
+      if (!d.escaped) { d.escaped = true; showTotalPop('A die bounced back into the tray!'); }
+      continue;
+    }
     const speed = d.body.velocity.length(), spin = d.body.angularVelocity.length();
     if (rolling && !d.done) {
       if (speed < 0.35 && spin < 0.35) d.restFrames++; else d.restFrames = 0;

@@ -115,15 +115,19 @@ function freshWorld(){
   const floor = new CANNON.Body({ mass:0, shape:new CANNON.Plane(), material:groundMat });
   floor.quaternion.setFromEuler(-Math.PI/2,0,0); world.addBody(floor);
   for (const [w,d,x,z] of [[24,-13.25,0],[0.5,-11.75],[0.5,11.75],[24,13.75]]) {}
-  for (const [w,h,d,x,y,z] of [
-    [24,1.6,0.5,0,0.8,-13.25],[0.5,1.6,27.5,-11.75,0.8,0],[0.5,1.6,27.5,11.75,0.8,0],[24,1.6,0.5,0,0.8,13.75]
-  ]) { const b = new CANNON.Body({ mass:0, shape:new CANNON.Box(new CANNON.Vec3(w/2,h/2,d/2)), material:wallPhysMat });
-    b.position.set(x,y,z); world.addBody(b); }
+  const P_THK=1.6, P_H=10, WALL_X=11.5, BACK_Z=-13, FRONT_Z=13.5;
+  function wallPlane(nx, nz, px, pz) {
+    const b = new CANNON.Body({ mass:0, shape:new CANNON.Plane(), material:wallPhysMat });
+    b.quaternion.setFromVectors(new CANNON.Vec3(0,0,1), new CANNON.Vec3(nx,0,nz));
+    b.position.set(px, 0, pz); world.addBody(b);
+  }
+  const WT=0.9;
+  wallPlane(-1,0,WALL_X-WT/2,0); wallPlane(1,0,-(WALL_X-WT/2),0); wallPlane(0,1,0,BACK_Z+WT/2); wallPlane(0,-1,0,FRONT_Z-WT/2);
   return world;
 }
 
 // exact game spawn + settle logic (physStep's rolling branch)
-function throwOnce(world, sides, n){
+function throwOnce(world, sides, n, trace=false){
   const dice=[];
   for(let i=0;i<n;i++){
     const isBall = false;
@@ -138,6 +142,7 @@ function throwOnce(world, sides, n){
   }
   let t=0, allDone=false;
   while(t<12 && !allDone){
+    if (trace) for (const d of dice) if (Math.abs(d.body.position.x) > 10.0 && !d._logged) { d._logged=true; console.log(`  wall-approach t=${t.toFixed(3)} pos=(${d.body.position.x.toFixed(2)},${d.body.position.y.toFixed(2)},${d.body.position.z.toFixed(2)}) vel=(${d.body.velocity.x.toFixed(2)},${d.body.velocity.y.toFixed(2)},${d.body.velocity.z.toFixed(2)})`); }
     world.step(1/60,1/60,4); t+=1/60;
     allDone=true;
     for(const d of dice){
@@ -217,3 +222,20 @@ for(const sides of [4,6,8,10,12,20]){
   results[sides]={worst:+worst.toFixed(3), pairsOver2cm:bad};
 }
 console.log(JSON.stringify(results));
+
+// ===== escape stress test =====
+const WALL_X=11.5, BACK_Z=-13, FRONT_Z=13.5;
+let escapes = 0, trials = 300;
+for (let i = 0; i < trials; i++) {
+  const sides = [4,6,8,10,12,20][i%6];
+  const w = freshWorld();
+  const dice = throwOnce(w, sides, 4, i===163);
+  for (const d of dice) {
+    const p = d.body.position;
+    if (p.y < -0.5 || Math.abs(p.x) > WALL_X + 1.2 || p.z < BACK_Z - 1.2 || p.z > FRONT_Z + 1.2) {
+      escapes++;
+      console.log(`escape trial ${i} sides=${sides} pos=(${p.x.toFixed(2)},${p.y.toFixed(2)},${p.z.toFixed(2)})`);
+    }
+  }
+}
+console.log(`escape test: ${escapes} escapes out of ${trials*4} dice`);
