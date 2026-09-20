@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dice Table v1.2.7a</title>
+<title>Dice Table v1.2.8</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -75,7 +75,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.7a</span></h1>
+  <h1>Dice Table <span id="ver">v1.2.8</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -552,7 +552,7 @@ function d10Data(scale) {
 
 /* ---------------- per-type build ---------------- */
 function buildType(sides) {
-  const scale = { 4:1.0, 6:1.0, 8:1.02, 10:1.0, 12:1.0, 20:1.04, 100:1.0 }[sides];
+  const scale = { 4:0.7, 6:0.9, 8:1.02, 10:1.1, 12:1.1, 20:1.248, 100:1.0 }[sides];
   if (sides === 100) {
     const cv = document.createElement('canvas'); cv.width = cv.height = 512;
     const ctx = cv.getContext('2d');
@@ -580,14 +580,14 @@ function buildType(sides) {
   if (sides === 6) {
     const values = [3, 4, 1, 6, 2, 5];
     const { tex, rows, cols } = makePipAtlas(values, 3);
-    const s = 0.5;
+    const s = 0.5 * scale;
     const verts = [[-s,-s,-s],[s,-s,-s],[s,s,-s],[-s,s,-s],[-s,-s,s],[s,-s,s],[s,s,s],[-s,s,s]];
     const faces = [
       [1,2,6,5], [0,4,7,3], [3,7,6,2], [0,1,5,4], [4,5,6,7], [0,3,2,1]
     ];
     const geo = chamferGeometry(verts, faces, 3);
     const normals = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-    return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 };
+    return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 * scale };
   }
   const { tex } = makeAtlas(sides === 4 ? data.values.map(() => null) : data.values, atlasCols);
   const geo = chamferGeometry(data.verts, data.faces, atlasCols);
@@ -743,7 +743,7 @@ const floaters = [];
 
 function makeCannonShape(sides, info) {
   if (info.sphere) return new CANNON.Sphere(info.size);
-  if (sides === 6) return new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
+  if (sides === 6) return new CANNON.Box(new CANNON.Vec3(0.5*0.9, 0.5*0.9, 0.5*0.9));
   return new CANNON.ConvexPolyhedron({
     vertices: info.verts.map(v => new CANNON.Vec3(...v)),
     faces: outwardFaces(info.verts, info.faces)
@@ -977,7 +977,7 @@ function finishRoll() {
   const total = values.reduce((a, b) => a + b, 0);
   const label = `${activeDice.length}d${activeDice[0].sides}`;
   activeDice.forEach((d, i) => {
-    const size = d.info.sphere ? d.info.size : 0.6;
+    const size = d.info.sphere ? d.info.size : (d.info.size ? d.info.size * 1.8 : 0.6);
     spawnFloater(new THREE.Vector3(d.body.position.x, d.body.position.y, d.body.position.z), values[i], size);
   });
   $last.innerHTML = `${label} &rarr; <b>${total}</b>`;
