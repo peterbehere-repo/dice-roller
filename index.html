@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dice Table v1.2.5</title>
+<title>Dice Table v1.2.6</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -75,7 +75,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.5</span></h1>
+  <h1>Dice Table <span id="ver">v1.2.6</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -301,12 +301,12 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
     return idMap.get(key);
   };
 
-  const idx = [];
+  const idx = [], kind = [];
   const triNormal = (a, b, c) => new V3().subVectors(b, a).cross(new V3().subVectors(c, a)).normalize();
   const P = i => new V3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
-  const addTri = (a, b, c, ref) => {
+  const addTri = (a, b, c, ref, isFace) => {
     if (ref && triNormal(P(a), P(b), P(c)).dot(ref) < 0) { const t = b; b = c; c = t; }
-    idx.push(a, b, c);
+    idx.push(a, b, c); kind.push(isFace ? 1 : 0);
     const nn = triNormal(P(a), P(b), P(c));
     for (const i of [a, b, c]) nAcc[i].add(nn);
   };
@@ -314,7 +314,7 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
   // 1) flat faces: fan of the inset ring, original plane
   for (const fd of faceData)
     for (let k = 1; k < fd.verts.length - 1; k++)
-      addTri(idOf(fd.fi, fd.verts[0]), idOf(fd.fi, fd.verts[k]), idOf(fd.fi, fd.verts[k + 1]));
+      addTri(idOf(fd.fi, fd.verts[0]), idOf(fd.fi, fd.verts[k]), idOf(fd.fi, fd.verts[k + 1]), undefined, true);
 
   // 2) edge bevel strips: quad across each original edge, both faces' rings
   const edgeMap = new Map();
@@ -339,9 +339,9 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
     // addTri's winding flip would rewire the quad diagonal, so orient first
     if (triNormal(P(ia), P(ib), P(jb)).dot(mid) < 0) {
       const q = A; A = B; B = q;
-      idx.push(ia, jb, ib, ia, ja, jb);
+      idx.push(ia, jb, ib, ia, ja, jb); kind.push(0,0,0);
     } else {
-      idx.push(ia, ib, jb, ia, jb, ja);
+      idx.push(ia, ib, jb, ia, jb, ja); kind.push(0,0,0);
     }
     for (const t3 of [[ia,ib,jb],[ia,jb,ja]]) {
       const nn = triNormal(P(t3[0]), P(t3[1]), P(t3[2]));
@@ -373,12 +373,10 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
   // crisp and bevels shade as the planar strips they are. Bevel/cap triangles
   // span two atlas cells, so pin their UVs to the blank padding line between
   // cells instead of smearing one face's decal into the other.
-  const faceN = new Set(faceData.map(fd => [fd.n.x.toFixed(3), fd.n.y.toFixed(3), fd.n.z.toFixed(3)].join(',')));
   const fp = [], fu = [], fn = [];
   for (let i = 0; i < idx.length; i += 3) {
     const nn = triNormal(P(idx[i]), P(idx[i+1]), P(idx[i+2]));
-    const key = [nn.x.toFixed(3), nn.y.toFixed(3), nn.z.toFixed(3)].join(',');
-    const isFace = faceN.has(key);
+    const isFace = kind[i/3] === 1;
     if (isFace) {
       for (const vi of [idx[i], idx[i+1], idx[i+2]]) {
         fp.push(pos[vi*3], pos[vi*3+1], pos[vi*3+2]);
