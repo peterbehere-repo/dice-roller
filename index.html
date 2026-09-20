@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dice Table v1.2.10d</title>
+<title>Dice Table v1.2.11d</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -32,6 +32,11 @@
   .row button:hover { background:rgba(255,255,255,.12); }
   #count { min-width:36px; text-align:center; font-size:19px; font-weight:700; }
   .row .lbl { margin:0 0 0 4px; }
+  #weightRow { gap:10px; }
+  #weight { flex:1; height:6px; -webkit-appearance:none; appearance:none; background:rgba(255,255,255,.18); border-radius:3px; outline:none; cursor:pointer; }
+  #weight::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
+  #weight::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
+  #weightVal { font-size:15px; font-weight:700; color:#e8e4d8; min-width:44px; text-align:right; }
   .row.disabled { opacity:.35; pointer-events:none; }
   #roll {
     margin-top:14px; padding:13px 0; width:100%; border:none; border-radius:10px; cursor:pointer;
@@ -75,7 +80,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.10d</span></h1>
+  <h1>Dice Table <span id="ver">v1.2.11d</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -84,6 +89,11 @@
     <span id="count">2</span>
     <button id="plus">+</button>
     <span class="lbl" style="margin:0 0 0 2px">dice</span>
+  </div>
+  <div class="lbl">Weight</div>
+  <div class="row" id="weightRow">
+    <input id="weight" type="range" min="25" max="400" step="5" value="100">
+    <span id="weightVal">1.0×</span>
   </div>
   <button id="roll">ROLL</button>
   <div id="last"></div>
@@ -810,12 +820,14 @@ function clack(impact) {
 }
 
 /* ---------------- game state & UI ---------------- */
-let dieType = 6, count = 2, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1;
+let dieType = 6, count = 2, weight = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1;
 let history = [];
 try { history = JSON.parse(localStorage.getItem('diceHistory') || '[]'); } catch (e) { history = []; }
 
 const $types = document.getElementById('types');
 const $count = document.getElementById('count');
+const $weight = document.getElementById('weight');
+const $weightVal = document.getElementById('weightVal');
 const $countRow = document.getElementById('countRow');
 const $roll = document.getElementById('roll');
 const $last = document.getElementById('last');
@@ -832,6 +844,7 @@ for (const s of [4, 6, 8, 10, 12, 20, 100]) {
 }
 document.getElementById('minus').onclick = () => { count = Math.max(1, count - 1); syncUI(); };
 document.getElementById('plus').onclick = () => { count = Math.min(10, count + 1); syncUI(); };
+document.getElementById('weight').oninput = (e) => { weight = e.target.value / 100; syncUI(); };
 document.getElementById('clear').onclick = () => { history = []; saveHistory(); renderHistory(); };
 $roll.onclick = roll;
 addEventListener('keydown', e => {
@@ -841,6 +854,8 @@ addEventListener('keydown', e => {
 function syncUI() {
   for (const b of $types.children) b.classList.toggle('on', +b.dataset.sides === dieType);
   $count.textContent = count;
+  $weightVal.textContent = weight.toFixed(2).replace(/\.?0+$/, '') + '×';
+  $weight.value = Math.round(weight * 100);
   $countRow.classList.toggle('disabled', dieType === 100);
   $roll.textContent = rolling ? 'ROLLING\u2026' : `ROLL ${count}d${dieType === 100 ? '100' : dieType}`;
 }
@@ -898,7 +913,7 @@ function roll() {
     const mesh = makeDieMesh(dieType, info);
     const isBall = dieType === 100;
     const body = new CANNON.Body({
-      mass:0.3,
+      mass:0.3 * weight,
       shape:makeCannonShape(dieType, info),
       material:dieMat,
       linearDamping:isBall ? 0.6 : 0.28, angularDamping:isBall ? 0.8 : 0.4,
