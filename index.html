@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dice Table v1.2.3</title>
+<title>Dice Table v1.2.4</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -75,7 +75,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.3</span></h1>
+  <h1>Dice Table <span id="ver">v1.2.4</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -370,14 +370,33 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
   }
 
   // flat shading: expand to non-indexed with per-triangle normals so faces stay
-  // crisp and bevels shade as the planar strips they are
+  // crisp and bevels shade as the planar strips they are. Bevel/cap triangles
+  // span two atlas cells, so pin their UVs to the blank padding line between
+  // cells instead of smearing one face's decal into the other.
+  const faceN = new Set(faceData.map(fd => [fd.n.x.toFixed(3), fd.n.y.toFixed(3), fd.n.z.toFixed(3)].join(',')));
   const fp = [], fu = [], fn = [];
   for (let i = 0; i < idx.length; i += 3) {
     const nn = triNormal(P(idx[i]), P(idx[i+1]), P(idx[i+2]));
-    for (const vi of [idx[i], idx[i+1], idx[i+2]]) {
-      fp.push(pos[vi*3], pos[vi*3+1], pos[vi*3+2]);
-      fu.push(uvs[vi*2], uvs[vi*2+1]);
-      fn.push(nn.x, nn.y, nn.z);
+    const key = [nn.x.toFixed(3), nn.y.toFixed(3), nn.z.toFixed(3)].join(',');
+    const isFace = faceN.has(key);
+    if (isFace) {
+      for (const vi of [idx[i], idx[i+1], idx[i+2]]) {
+        fp.push(pos[vi*3], pos[vi*3+1], pos[vi*3+2]);
+        fu.push(uvs[vi*2], uvs[vi*2+1]);
+        fn.push(nn.x, nn.y, nn.z);
+      }
+    } else {
+      // bevel/cap: sample the blank padding between atlas cells — collapse all
+      // three corners to one cell-boundary point so no face decal smears over
+      const avgU = (uvs[idx[i]*2] + uvs[idx[i+1]*2] + uvs[idx[i+2]*2]) / 3;
+      const avgV = (uvs[idx[i]*2+1] + uvs[idx[i+1]*2+1] + uvs[idx[i+2]*2+1]) / 3;
+      const pu = Math.round(avgU * cols) / cols;
+      const pv = Math.round(avgV * rows0) / rows0;
+      for (const vi of [idx[i], idx[i+1], idx[i+2]]) {
+        fp.push(pos[vi*3], pos[vi*3+1], pos[vi*3+2]);
+        fu.push(pu, pv);
+        fn.push(nn.x, nn.y, nn.z);
+      }
     }
   }
   const g = new THREE.BufferGeometry();
@@ -554,15 +573,6 @@ function buildType(sides) {
       [1,2,6,5], [0,4,7,3], [3,7,6,2], [0,1,5,4], [4,5,6,7], [0,3,2,1]
     ];
     const geo = chamferGeometry(verts, faces, 3);
-    const uv = geo.attributes.uv;
-    for (let f = 0; f < 6; f++) {
-      const col = f % cols, row = Math.floor(f / cols);
-      const u0 = col / cols, u1 = (col + 1) / cols, v0 = 1 - (row + 1) / rows, v1 = 1 - row / rows;
-      for (let vi = 0; vi < 4; vi++) {
-        const i = f * 4 + vi;
-        uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0));
-      }
-    }
     const normals = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
     return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 };
   }
