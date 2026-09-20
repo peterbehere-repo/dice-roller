@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dice Table v1.1</title>
+<title>Dice Table v1.2.2</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -75,7 +75,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.1</span></h1>
+  <h1>Dice Table <span id="ver">v1.2.2</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -227,6 +227,155 @@ function faceNormals(verts, faces) {
     if (n.dot(mid) < 0) n.negate();
     return n.normalize();
   });
+}
+
+// stay untouched. Normals are explicit per-piece, so faces stay crisp.
+const CHAMFER = 0.06;                      // bevel width (die is ~1 unit)
+function chamferGeometry(verts, faces, cols, pad = 0.055) {
+  const V3 = THREE.Vector3;
+  const nrm = faceNormals(verts, faces);
+  const rows0 = Math.ceil(faces.length / cols);
+
+  // ---- per-face setup: local 2D frame, inset polygon, uv mapper ----
+  const faceData = faces.map((f, fi) => {
+    const pts = f.map(i => new V3(...verts[i]));
+    const ctr = pts.reduce((s, v) => s.add(v), new V3()).multiplyScalar(1 / pts.length);
+    const n = nrm[fi];
+    const t1 = new V3().crossVectors(new V3(0, 1, 0), n);
+    if (t1.lengthSq() < 1e-6) t1.set(1, 0, 0);
+    t1.normalize();
+    const t2 = new V3().crossVectors(n, t1);
+    const P2 = pts.map(q => { const d = new V3().subVectors(q, ctr); return [d.dot(t1), d.dot(t2)]; });
+    const maxr = Math.max(1e-6, ...P2.map(p => Math.hypot(p[0], p[1])));
+    const col = fi % cols, row = Math.floor(fi / cols);
+    const u0 = col / cols + pad / cols, u1 = (col + 1) / cols - pad / cols;
+    const v0 = 1 - (row + 1) / rows0 + pad / rows0, v1 = 1 - row / rows0 - pad / rows0;
+    const uvOf = q => {
+      const d = new V3().subVectors(q, ctr);
+      return [u0 + (d.dot(t1) / maxr * 0.5 + 0.5) * (v1 - v0) * 0 + (d.dot(t1) / maxr * 0.5 + 0.5) * (u1 - u0),
+              v0 + (d.dot(t2) / maxr * 0.5 + 0.5) * (v1 - v0)];
+    };
+    // make the ring CCW in the face frame (interior on the left)
+    let area = 0;
+    for (let i = 0; i < P2.length; i++) { const a = P2[i], b = P2[(i + 1) % P2.length]; area += a[0] * b[1] - b[0] * a[1]; }
+    if (area < 0) { f = f.slice().reverse(); P2.reverse(); }
+    // inset each edge inward by CHAMFER; new corner = intersection of the two
+    // neighbouring offset lines, clamped so narrow faces never invert
+    const m = P2.length, inset2 = [];
+    for (let i = 0; i < m; i++) {
+      const a = P2[(i - 1 + m) % m], b = P2[i], c = P2[(i + 1) % m];
+      const off = (p, q) => {
+        const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1e-9;
+        return { px: p[0] - dy / L * CHAMFER, py: p[1] + dx / L * CHAMFER, dx, dy };
+      };
+      const l1 = off(a, b), l2 = off(b, c);
+      const det = l1.dx * l2.dy - l1.dy * l2.dx;
+      let qx, qy;
+      if (Math.abs(det) < 1e-9) { qx = b[0]; qy = b[1]; }
+      else {
+        const t = ((l2.px - l1.px) * l2.dy - (l2.py - l1.py) * l2.dx) / det;
+        qx = l1.px + l1.dx * t; qy = l1.py + l1.dy * t;
+      }
+      const cx = P2.reduce((s, p) => s + p[0], 0) / m, cy = P2.reduce((s, p) => s + p[1], 0) / m;
+      const vx = qx - b[0], vy = qy - b[1];
+      const limX = (cx - b[0]) * 0.45, limY = (cy - b[1]) * 0.45;
+      const len = Math.hypot(vx, vy), limLen = Math.hypot(limX, limY);
+      if (len > limLen && len > 1e-9) { qx = b[0] + vx / len * limLen; qy = b[1] + vy / len * limLen; }
+      inset2.push([qx, qy]);
+    }
+    const inset3 = inset2.map(q => new V3().add(ctr).addScaledVector(t1, q[0]).addScaledVector(t2, q[1]));
+    return { fi, verts: f, n, ctr, uvOf, inset3 };
+  });
+
+  // ---- vertices: one id per (face, ring corner); faces own their rings ----
+  const pos = [], uvs = [], nAcc = [];
+  const idMap = new Map();
+  const idOf = (fi, vi) => {
+    const key = fi + '_' + vi;
+    if (!idMap.has(key)) {
+      const fd = faceData[fi], k = fd.verts.indexOf(vi);
+      const p = fd.inset3[k], u = fd.uvOf(p);
+      idMap.set(key, pos.length / 3);
+      pos.push(p.x, p.y, p.z); uvs.push(u[0], u[1]); nAcc.push(new V3());
+    }
+    return idMap.get(key);
+  };
+
+  const idx = [];
+  const triNormal = (a, b, c) => new V3().subVectors(b, a).cross(new V3().subVectors(c, a)).normalize();
+  const P = i => new V3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+  const addTri = (a, b, c, ref) => {
+    if (ref && triNormal(P(a), P(b), P(c)).dot(ref) < 0) { const t = b; b = c; c = t; }
+    idx.push(a, b, c);
+    const nn = triNormal(P(a), P(b), P(c));
+    for (const i of [a, b, c]) nAcc[i].add(nn);
+  };
+
+  // 1) flat faces: fan of the inset ring, original plane
+  for (const fd of faceData)
+    for (let k = 1; k < fd.verts.length - 1; k++)
+      addTri(idOf(fd.fi, fd.verts[0]), idOf(fd.fi, fd.verts[k]), idOf(fd.fi, fd.verts[k + 1]));
+
+  // 2) edge bevel strips: quad across each original edge, both faces' rings
+  const edgeMap = new Map();
+  const ekey = (a, b) => a < b ? a + '_' + b : b + '_' + a;
+  for (const fd of faceData) {
+    const v = fd.verts;
+    for (let k = 0; k < v.length; k++) {
+      const a = v[k], b = v[(k + 1) % v.length];
+      const key = ekey(a, b);
+      if (!edgeMap.has(key)) edgeMap.set(key, []);
+      edgeMap.get(key).push({ fi: fd.fi, a, b });
+    }
+  }
+  for (const [, sides] of edgeMap) {
+    if (sides.length !== 2) continue;
+    const [A0, B0] = sides;
+    let A = A0, B = B0;
+    // pair corners by ORIGINAL vertex id so the quad is never twisted
+    const ia = idOf(A.fi, A.a), ib = idOf(A.fi, A.b),
+          ja = idOf(B.fi, A.a), jb = idOf(B.fi, A.b);
+    const mid = new V3().addVectors(P(ia), P(jb)).multiplyScalar(0.5).normalize();
+    // addTri's winding flip would rewire the quad diagonal, so orient first
+    if (triNormal(P(ia), P(ib), P(jb)).dot(mid) < 0) {
+      const q = A; A = B; B = q;
+      idx.push(ia, jb, ib, ia, ja, jb);
+    } else {
+      idx.push(ia, ib, jb, ia, jb, ja);
+    }
+    for (const t3 of [[ia,ib,jb],[ia,jb,ja]]) {
+      const nn = triNormal(P(t3[0]), P(t3[1]), P(t3[2]));
+      for (const i of t3) nAcc[i].add(nn);
+    }
+  }
+
+  // 3) corner caps: connect consecutive faces' ring corners around each vertex
+  const vertFaces = Array.from({ length: verts.length }, () => []);
+  faceData.forEach(fd => fd.verts.forEach(v => vertFaces[v].push(fd)));
+  for (let vi = 0; vi < verts.length; vi++) {
+    const fds = vertFaces[vi];
+    if (fds.length < 3) continue;
+    const axis = new V3(...verts[vi]).normalize();
+    const ref = Math.abs(axis.y) < 0.9 ? new V3(0, 1, 0) : new V3(1, 0, 0);
+    const t1 = new V3().crossVectors(ref, axis).normalize();
+    const t2 = new V3().crossVectors(axis, t1);
+    const pts = fds.map(fd => {
+      const p = fd.inset3[fd.verts.indexOf(vi)], d = new V3().subVectors(p, new V3(...verts[vi]));
+      return { id: idOf(fd.fi, vi), ang: Math.atan2(d.dot(t2), d.dot(t1)) };
+    });
+    pts.sort((x, y) => x.ang - y.ang);
+    const ids = pts.map(pt => pt.id);
+    for (let k = 1; k < ids.length - 1; k++)
+      addTri(ids[0], ids[k], ids[k + 1], axis);
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(
+    nAcc.map(n => n.clone().normalize()).flatMap(n => [n.x, n.y, n.z]), 3));
+  g.setIndex(idx);
+  return g;
 }
 
 /* ---------------- die definitions ---------------- */
@@ -390,7 +539,12 @@ function buildType(sides) {
   if (sides === 6) {
     const values = [3, 4, 1, 6, 2, 5];
     const { tex, rows, cols } = makePipAtlas(values, 3);
-    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const s = 0.5;
+    const verts = [[-s,-s,-s],[s,-s,-s],[s,s,-s],[-s,s,-s],[-s,-s,s],[s,-s,s],[s,s,s],[-s,s,s]];
+    const faces = [
+      [1,2,6,5], [0,4,7,3], [3,7,6,2], [0,1,5,4], [4,5,6,7], [0,3,2,1]
+    ];
+    const geo = chamferGeometry(verts, faces, 3);
     const uv = geo.attributes.uv;
     for (let f = 0; f < 6; f++) {
       const col = f % cols, row = Math.floor(f / cols);
@@ -404,7 +558,7 @@ function buildType(sides) {
     return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 };
   }
   const { tex } = makeAtlas(sides === 4 ? data.values.map(() => null) : data.values, atlasCols);
-  const geo = buildFaceGeometry(data.verts, data.faces, data.values, atlasCols);
+  const geo = chamferGeometry(data.verts, data.faces, atlasCols);
   const normals = faceNormals(data.verts, data.faces);
   const out = { geo, tex, values:data.values, faceNormalsArr:normals, verts:data.verts, faces:data.faces };
   if (sides === 4) {
