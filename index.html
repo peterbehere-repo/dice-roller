@@ -184,6 +184,15 @@ function makeAtlas(values, cols, fontScale = 1) {
 
 /* ---------------- geometry builder ---------------- */
 // verts: [[x,y,z],...]  faces: [[i,...],...]  (cyclic order, winding auto-fixed)
+// In-face "right" direction: project world up into the face plane, then cross
+// with the normal. Near-polar faces (normal ~ +/-Y) would degenerate, so there
+// we fall back to the Z axis — numbers read horizontally, standard dice look.
+function faceTangent(nrm) {
+  const up = new THREE.Vector3(0, 1, 0);
+  if (Math.abs(nrm.dot(up)) > 0.99) return new THREE.Vector3(1, 0, 0).cross(nrm).normalize();
+  return new THREE.Vector3().crossVectors(up, nrm).normalize();
+}
+
 function buildFaceGeometry(verts, faces, values, cols, pad = 0.055) {
   const rows = Math.ceil(faces.length / cols);
   const pos = [], uv = [];
@@ -199,9 +208,7 @@ function buildFaceGeometry(verts, faces, values, cols, pad = 0.055) {
     const pts = idx.map(i => new THREE.Vector3(...verts[i]));
     const ctr = pts.reduce((s, v) => s.add(v), new THREE.Vector3()).multiplyScalar(1 / pts.length);
     const nrm = n.clone().normalize();
-    const t1 = new THREE.Vector3().crossVectors(up, nrm);
-    if (t1.lengthSq() < 1e-6) t1.set(1, 0, 0);
-    t1.normalize();
+    const t1 = faceTangent(nrm);
     const t2 = new THREE.Vector3().crossVectors(nrm, t1);
     const P = pts.map(v => { const d = new THREE.Vector3().subVectors(v, ctr); return [d.dot(t1), d.dot(t2)]; });
     const maxr = Math.max(1e-6, ...P.map(p => Math.hypot(p[0], p[1])));
@@ -260,9 +267,7 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
     const pts = f.map(i => new V3(...verts[i]));
     const ctr = pts.reduce((s, v) => s.add(v), new V3()).multiplyScalar(1 / pts.length);
     const n = nrm[fi];
-    const t1 = new V3().crossVectors(new V3(0, 1, 0), n);
-    if (t1.lengthSq() < 1e-6) t1.set(1, 0, 0);
-    t1.normalize();
+    const t1 = faceTangent(n);
     const t2 = new V3().crossVectors(n, t1);
     const P2 = pts.map(q => { const d = new V3().subVectors(q, ctr); return [d.dot(t1), d.dot(t2)]; });
     const maxr = Math.max(1e-6, ...P2.map(p => Math.hypot(p[0], p[1])));
