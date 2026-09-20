@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dice Table v1.2.6</title>
+<title>Dice Table v1.2.7a</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -75,7 +75,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.6</span></h1>
+  <h1>Dice Table <span id="ver">v1.2.7a</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -229,6 +229,21 @@ function faceNormals(verts, faces) {
   });
 }
 
+// Reorder each face CCW around its outward normal (right-hand rule),
+// so Cannon's ConvexPolyhedron accepts the shape without winding warnings.
+function outwardFaces(verts, faces) {
+  const up = new THREE.Vector3(0, 1, 0);
+  return faces.map(f => {
+    let idx = f.slice();
+    const a = new THREE.Vector3(...verts[idx[0]]);
+    const b = new THREE.Vector3(...verts[idx[1]]);
+    const c = new THREE.Vector3(...verts[idx[2]]);
+    const n = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+    const mid = new THREE.Vector3().addVectors(a, b).add(c).multiplyScalar(1 / 3);
+    if (n.dot(mid) < 0) idx.reverse();
+    return idx;
+  });
+}
 // stay untouched. Normals are explicit per-piece, so faces stay crisp.
 const CHAMFER = 0.06;                      // bevel width (die is ~1 unit)
 function chamferGeometry(verts, faces, cols, pad = 0.055) {
@@ -731,7 +746,7 @@ function makeCannonShape(sides, info) {
   if (sides === 6) return new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
   return new CANNON.ConvexPolyhedron({
     vertices: info.verts.map(v => new CANNON.Vec3(...v)),
-    faces: info.faces
+    faces: outwardFaces(info.verts, info.faces)
   });
 }
 function makeDieMesh(sides, info) {
