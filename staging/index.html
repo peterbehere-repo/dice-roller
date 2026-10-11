@@ -33,9 +33,9 @@
   #count { min-width:36px; text-align:center; font-size:19px; font-weight:700; }
   .row .lbl { margin:0 0 0 4px; }
   #weightRow { gap:10px; }
-  #weight, #gravity { flex:1; height:6px; -webkit-appearance:none; appearance:none; background:rgba(255,255,255,.18); border-radius:3px; outline:none; cursor:pointer; }
-  #weight::-webkit-slider-thumb, #gravity::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
-  #weight::-moz-range-thumb, #gravity::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
+  #weight, #gravity, #momentum { flex:1; height:6px; -webkit-appearance:none; appearance:none; background:rgba(255,255,255,.18); border-radius:3px; outline:none; cursor:pointer; }
+  #weight::-webkit-slider-thumb, #gravity::-webkit-slider-thumb, #momentum::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
+  #weight::-moz-range-thumb, #gravity::-moz-range-thumb, #momentum::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
   #weightVal { font-size:15px; font-weight:700; color:#e8e4d8; min-width:44px; text-align:right; }
   .row.disabled { opacity:.35; pointer-events:none; }
   #roll {
@@ -99,6 +99,11 @@
   <div class="row" id="gravityRow">
     <input id="gravity" type="range" min="50" max="200" step="5" value="100">
     <span id="gravityVal">1.0×</span>
+  </div>
+  <div class="lbl">Momentum</div>
+  <div class="row" id="momentumRow">
+    <input id="momentum" type="range" min="50" max="200" step="5" value="100">
+    <span id="momentumVal">1.0×</span>
   </div>
   <button id="roll">ROLL</button>
   <div id="last"></div>
@@ -844,7 +849,7 @@ function clack(impact) {
 }
 
 /* ---------------- game state & UI ---------------- */
-let dieType = 6, count = 2, weight = 1.0, gravityMul = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
+let dieType = 6, count = 2, weight = 1.0, gravityMul = 1.0, momentumMul = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
 window.__dbg = () => ({ weight, rolling, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice });
 let history = [];
 try { history = JSON.parse(localStorage.getItem('diceHistory') || '[]'); } catch (e) { history = []; }
@@ -855,6 +860,8 @@ const $weight = document.getElementById('weight');
 const $weightVal = document.getElementById('weightVal');
 const $gravity = document.getElementById('gravity');
 const $gravityVal = document.getElementById('gravityVal');
+const $momentum = document.getElementById('momentum');
+const $momentumVal = document.getElementById('momentumVal');
 const $countRow = document.getElementById('countRow');
 const $roll = document.getElementById('roll');
 const $last = document.getElementById('last');
@@ -873,6 +880,7 @@ document.getElementById('minus').onclick = () => { count = Math.max(1, count - 1
 document.getElementById('plus').onclick = () => { count = Math.min(10, count + 1); syncUI(); };
 document.getElementById('weight').oninput = (e) => { weight = e.target.value / 100; syncUI(); saveHistory(); };
 document.getElementById('gravity').oninput = (e) => { gravityMul = e.target.value / 100; world.gravity.set(0, -24 * gravityMul, 0); syncUI(); };
+document.getElementById('momentum').oninput = (e) => { momentumMul = e.target.value / 100; syncUI(); };
 // clamp weight (older saved sessions may have sub-1x values; slider now starts at 1x)
 weight = Math.max(1, weight);
 world.gravity.set(0, -24 * gravityMul, 0);
@@ -889,6 +897,8 @@ function syncUI() {
   $weight.value = Math.round(weight * 100);
   $gravityVal.textContent = gravityMul.toFixed(2).replace(/\.?0+$/, '') + '×';
   $gravity.value = Math.round(gravityMul * 100);
+  $momentumVal.textContent = momentumMul.toFixed(2).replace(/\.?0+$/, '') + '×';
+  $momentum.value = Math.round(momentumMul * 100);
   $countRow.classList.toggle('disabled', dieType === 100);
   $roll.textContent = rolling ? 'ROLLING\u2026' : `ROLL ${count}d${dieType === 100 ? '100' : dieType}`;
 }
@@ -957,7 +967,8 @@ function roll() {
     });
     const spread = Math.min(5.6, (i - (n - 1) / 2) * 1.25);
     body.position.set(spread + (Math.random() - 0.5) * 0.25, 7.6 + Math.random() * 0.8, 6.2 + (i % 2) * 1.6);
-    body.velocity.set((Math.random() - 0.5) * 7, -2 - Math.random(), -(11 + Math.random() * 4));
+    // forward momentum: throw speed toward the back of the tray, scaled by the Momentum slider
+    body.velocity.set((Math.random() - 0.5) * 7, -2 - Math.random(), -(11 + Math.random() * 4) * momentumMul);
     body.angularVelocity.set((Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26);
     body.quaternion.setFromEuler(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2);
     // keep spawn orientation well mixed
