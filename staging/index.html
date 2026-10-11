@@ -579,29 +579,76 @@ function d10Data(scale) {
   return { verts, faces, values };
 }
 
+// real 100-sided die: convex polyhedron built as the intersection of 100 tangent
+// planes placed at Fibonacci-sphere points (Zocchihedron-style construction).
+// Vertices come from triple-plane intersections of mutually adjacent faces only,
+// which keeps the search tiny and guarantees a valid closed hull.
+function d100Data(scale) {
+  const R = 0.52 * scale;
+  const N = 100, GA = Math.PI * (3 - Math.sqrt(5));
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    const y = 1 - (i + 0.5) * 2 / N;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const th = GA * i;
+    pts.push([r * Math.cos(th), y, r * Math.sin(th)]);
+  }
+  const dot3 = (a, p) => a[0] * p[0] + a[1] * p[1] + a[2] * p[2];
+  const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const knn = pts.map((p, i) => pts
+    .map((q, j) => [j, (p[0]-q[0])**2 + (p[1]-q[1])**2 + (p[2]-q[2])**2])
+    .sort((a, b) => a[1] - b[1]).slice(1, 8).map(d => d[0]));
+  const isNb = (a, b) => knn[a].includes(b);
+  const verts = [];
+  const vmap = new Map();
+  const addVert = (v) => {
+    const k = v.map(n => n.toFixed(4)).join(',');
+    if (!vmap.has(k)) { vmap.set(k, verts.length); verts.push(v); }
+    return vmap.get(k);
+  };
+  for (let i = 0; i < N; i++) {
+    const nb = knn[i];
+    for (let ai = 0; ai < nb.length; ai++) for (let bi = ai + 1; bi < nb.length; bi++) {
+      const a = nb[ai], b = nb[bi];
+      if (!isNb(a, b)) continue;
+      const n1 = pts[i], n2 = pts[a], n3 = pts[b];
+      const bxc = cross3(n2, n3), cxa = cross3(n3, n1), axb = cross3(n1, n2);
+      const den = dot3(n1, bxc);
+      if (Math.abs(den) < 1e-8) continue;
+      const v = [
+        R * (bxc[0] + cxa[0] + axb[0]) / den,
+        R * (bxc[1] + cxa[1] + axb[1]) / den,
+        R * (bxc[2] + cxa[2] + axb[2]) / den
+      ];
+      let ok = true;
+      for (let j = 0; j < N; j++) if (dot3(pts[j], v) > R + 1e-5) { ok = false; break; }
+      if (ok) addVert(v);
+    }
+  }
+  const faces = pts.map((n, i) => {
+    const idx = verts
+      .map((v, vi) => [vi, Math.abs(dot3(n, v) - R)])
+      .filter(d => d[1] < 1e-4)
+      .map(d => d[0]);
+    if (idx.length < 3) return null;
+    // order the polygon CCW seen from outside
+    const ref = Math.abs(n[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const t1 = cross3(ref, n);
+    const tl = Math.hypot(t1[0], t1[1], t1[2]); t1[0] /= tl; t1[1] /= tl; t1[2] /= tl;
+    const t2 = cross3(n, t1);
+    idx.sort((a, b) => Math.atan2(dot3(t2, verts[a]), dot3(t1, verts[a])) - Math.atan2(dot3(t2, verts[b]), dot3(t1, verts[b])));
+    return idx;
+  }).filter(Boolean);
+  const values = Array.from({ length: faces.length }, (_, i) => i + 1);
+  return { verts, faces, values, size:R };
+}
+
 /* ---------------- per-type build ---------------- */
 function buildType(sides) {
-  const scale = { 4:0.7, 6:0.9, 8:1.122, 10:1.21, 12:1.1, 20:1.3728, 100:1.0 }[sides];
-  if (sides === 100) {
-    const cv = document.createElement('canvas'); cv.width = cv.height = 512;
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#f5efdd'; ctx.fillRect(0, 0, 512, 512);
-    ctx.strokeStyle = 'rgba(90,60,30,.45)'; ctx.lineWidth = 6;
-    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(256, 256, 34 + i * 48, 0, Math.PI * 2); ctx.stroke(); }
-    ctx.fillStyle = '#a01c22';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (const [x, y, r, s] of [[256,140,0,64],[110,320,0.55,56],[400,330,-0.5,56],[256,440,-0.3,50]]) {
-      ctx.save(); ctx.translate(x, y); ctx.rotate(r);
-      ctx.font = `700 ${s}px Georgia, serif`;
-      ctx.fillText('100', 0, 0);
-      ctx.restore();
-    }
-    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-    const geo = new THREE.SphereGeometry(0.52 * scale, 48, 32);
-    return { geo, tex, sphere:true, size:0.52 * scale };
-  }
+  const scale = { 4:0.7, 6:0.9, 8:1.122, 10:1.21, 12:1.1, 20:1.3728, 100:2.0 }[sides];
   let data, atlasCols;
-  if (sides === 4) { data = d4Data(scale); atlasCols = 2; }
+  if (sides === 100) { data = d100Data(scale); atlasCols = 10; }
+  else if (sides === 4) { data = d4Data(scale); atlasCols = 2; }
   else if (sides === 8) { data = d8Data(scale); atlasCols = 2; }
   else if (sides === 10) { data = d10Data(scale); atlasCols = 2; }
   else if (sides === 12) { data = d12Data(scale); atlasCols = 3; }
@@ -618,7 +665,7 @@ function buildType(sides) {
     const normals = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
     return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 * scale };
   }
-  const fontScale = sides === 10 ? 0.85 : 1; // d10 glyphs 15% smaller (die got bigger, keep numbers proportionate)
+  const fontScale = sides === 100 ? 0.72 : sides === 10 ? 0.85 : 1; // d100/d10 glyphs smaller to fit 2-3 digit values
   const { tex } = makeAtlas(sides === 4 ? data.values.map(() => null) : data.values, atlasCols, fontScale);
   const geo = chamferGeometry(data.verts, data.faces, atlasCols);
   const normals = faceNormals(data.verts, data.faces);
@@ -954,15 +1001,14 @@ function roll() {
   const n = count;
   const tuning = applyWeightTuning(weight);
   currentGBoost = tuning.gBoost;
-  const isBall = dieType === 100;
   for (let i = 0; i < n; i++) {
     const mesh = makeDieMesh(dieType, info);
     const body = new CANNON.Body({
       mass:0.3 * weight,
       shape:makeCannonShape(dieType, info),
       material:dieMat,
-      linearDamping:(isBall ? 0.6 : 0.28) * Math.pow(weight, -0.15),
-      angularDamping:(isBall ? 0.8 : 0.4) * Math.pow(weight, -0.10),
+      linearDamping:0.28 * Math.pow(weight, -0.15),
+      angularDamping:0.4 * Math.pow(weight, -0.10),
       sleepSpeedLimit:0.4, sleepTimeLimit:0.35, allowSleep:true
     });
     const spread = Math.min(5.6, (i - (n - 1) / 2) * 1.25);
@@ -988,15 +1034,10 @@ function roll() {
 }
 // Read a die's value from its settled orientation. Returns null when the face
 // is not cleanly up (cocked die) unless bestOnly — then the closest face wins.
-// The d100 is a sphere: its resting orientation is uniformly random, so the
-// value is drawn from crypto at the moment it comes to rest.
+// value is decided by physics for every die type: which face points up when it
+// settles is the roll
 function readDie(d, bestOnly) {
   const info = d.info;
-  if (d.sides === 100) {
-    const a = new Uint32Array(1);
-    crypto.getRandomValues(a);
-    return 1 + (a[0] % 100);
-  }
   const q = d.body.quaternion;
   const up = new CANNON.Vec3(0, 1, 0);
   let best = -Infinity, bestIdx = 0;
