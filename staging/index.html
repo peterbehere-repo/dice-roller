@@ -405,10 +405,13 @@ function chamferGeometry(verts, faces, cols, mode = 1, pad = 0.055) {
     if (triNormal(P(ia), P(ib), P(jb)).dot(mid) < 0) flipped = true;
     if (mode === 0) continue;
     if (mode === 1) {
+      // kind must have EXACTLY one entry per triangle — a third 0 here used to be
+      // masked by faces-first ordering but shifts every later face's kind once
+      // strips are emitted first, collapsing face UVs to blank padding (no pips)
       if (flipped) {
-        idx.push(ia, jb, ib, ia, ja, jb); kind.push(0,0,0);
+        idx.push(ia, jb, ib, ia, ja, jb); kind.push(0,0);
       } else {
-        idx.push(ia, ib, jb, ia, jb, ja); kind.push(0,0,0);
+        idx.push(ia, ib, jb, ia, jb, ja); kind.push(0,0);
       }
       for (const t3 of (flipped ? [[ia,jb,ib],[ia,ja,jb]] : [[ia,ib,jb],[ia,jb,ja]])) {
         const nn = triNormal(P(t3[0]), P(t3[1]), P(t3[2]));
@@ -527,6 +530,8 @@ function chamferGeometry(verts, faces, cols, mode = 1, pad = 0.055) {
         addTri(ids[0], ids[k], ids[k + 1], axis);
     } else {
       // polygon: face corner -> arc polyline -> next face corner -> ... around vi
+      // NOTE: the apex must sit INSIDE the arc boundary — the original vertex is the
+      // sharpest point of the un-chamfered solid, so fanning to it leaves a sharp tip
       const poly = [];
       for (let k = 0; k < pts.length; k++) {
         const f1 = pts[k].fd, f2 = pts[(k + 1) % pts.length].fd;
@@ -547,7 +552,13 @@ function chamferGeometry(verts, faces, cols, mode = 1, pad = 0.055) {
       if (poly.length < 3) continue;
       const avgU = poly.reduce((s, id) => s + uvs[id * 2], 0) / poly.length;
       const avgV = poly.reduce((s, id) => s + uvs[id * 2 + 1], 0) / poly.length;
-      const apex = addRoundVert(new V3(...verts[vi]), axis,
+      // apex: the original vertex is the sharpest point of the un-chamfered solid,
+      // so fanning to it leaves a sharp tip. Anchor the apex to the fillet arcs'
+      // reach instead: the boundary's max projection onto the corner axis. The dome
+      // then peaks level with the edge fillets on every die shape.
+      const maxProj = Math.max(...poly.map(id => P(id).dot(axis)));
+      const apexP = axis.clone().multiplyScalar(maxProj);
+      const apex = addRoundVert(apexP, axis,
         Math.round(avgU * cols) / cols, Math.round(avgV * rows0) / rows0);
       for (let k = 0; k < poly.length; k++) {
         let a = poly[k], b = poly[(k + 1) % poly.length];
