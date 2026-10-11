@@ -889,7 +889,7 @@ const dir = new THREE.DirectionalLight(0xfff2dd, 1.35);
 dir.position.set(3, 20, 2);
 dir.castShadow = true;
 dir.shadow.mapSize.set(2048, 2048);
-dir.shadow.bias = -0.0004;   // keep the contact shadow hugging the wall base
+dir.shadow.normalBias = 0.02;  // keep the contact shadow hugging the wall base
 dir.shadow.camera.left = -16; dir.shadow.camera.right = 16;
 dir.shadow.camera.top = 16; dir.shadow.camera.bottom = -16;
 scene.add(dir);
