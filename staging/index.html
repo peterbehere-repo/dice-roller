@@ -97,12 +97,12 @@
   </div>
   <div class="lbl">Gravity</div>
   <div class="row" id="gravityRow">
-    <input id="gravity" type="range" min="50" max="200" step="5" value="100">
+    <input id="gravity" type="range" min="100" max="400" step="5" value="100">
     <span id="gravityVal">1.0×</span>
   </div>
   <div class="lbl">Momentum</div>
   <div class="row" id="momentumRow">
-    <input id="momentum" type="range" min="50" max="200" step="5" value="100">
+    <input id="momentum" type="range" min="100" max="400" step="5" value="100">
     <span id="momentumVal">1.0×</span>
   </div>
   <button id="roll">ROLL</button>
@@ -727,7 +727,7 @@ addWall(TABLE_W + 2*wallThk, wallH, wallThk, 0, wallH/2, FRONT_Z);
 
 /* ---------------- physics ---------------- */
 const world = new CANNON.World({ gravity:new CANNON.Vec3(0, -24, 0) });
-// gravity slider (0.5x-2x) scales world.gravity directly; the weight gBoost force hack
+// gravity slider (1x-4x) scales world.gravity directly; the weight gBoost force hack
 // reads world.gravity each step, so both scale together and 1x stays the old default
 world.broadphase = new CANNON.SAPBroadphase(world);
 world.allowSleep = true;
