@@ -33,9 +33,9 @@
   #count { min-width:36px; text-align:center; font-size:19px; font-weight:700; }
   .row .lbl { margin:0 0 0 4px; }
   #weightRow { gap:10px; }
-  #weight { flex:1; height:6px; -webkit-appearance:none; appearance:none; background:rgba(255,255,255,.18); border-radius:3px; outline:none; cursor:pointer; }
-  #weight::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
-  #weight::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
+  #weight, #gravity { flex:1; height:6px; -webkit-appearance:none; appearance:none; background:rgba(255,255,255,.18); border-radius:3px; outline:none; cursor:pointer; }
+  #weight::-webkit-slider-thumb, #gravity::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
+  #weight::-moz-range-thumb, #gravity::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
   #weightVal { font-size:15px; font-weight:700; color:#e8e4d8; min-width:44px; text-align:right; }
   .row.disabled { opacity:.35; pointer-events:none; }
   #roll {
@@ -94,6 +94,11 @@
   <div class="row" id="weightRow">
     <input id="weight" type="range" min="100" max="400" step="5" value="100">
     <span id="weightVal">1.0×</span>
+  </div>
+  <div class="lbl">Gravity</div>
+  <div class="row" id="gravityRow">
+    <input id="gravity" type="range" min="50" max="200" step="5" value="100">
+    <span id="gravityVal">1.0×</span>
   </div>
   <button id="roll">ROLL</button>
   <div id="last"></div>
@@ -717,6 +722,8 @@ addWall(TABLE_W + 2*wallThk, wallH, wallThk, 0, wallH/2, FRONT_Z);
 
 /* ---------------- physics ---------------- */
 const world = new CANNON.World({ gravity:new CANNON.Vec3(0, -24, 0) });
+// gravity slider (0.5x-2x) scales world.gravity directly; the weight gBoost force hack
+// reads world.gravity each step, so both scale together and 1x stays the old default
 world.broadphase = new CANNON.SAPBroadphase(world);
 world.allowSleep = true;
 world.solver.iterations = 30;   // firmer non-penetration between dice
@@ -837,7 +844,7 @@ function clack(impact) {
 }
 
 /* ---------------- game state & UI ---------------- */
-let dieType = 6, count = 2, weight = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
+let dieType = 6, count = 2, weight = 1.0, gravityMul = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
 window.__dbg = () => ({ weight, rolling, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice });
 let history = [];
 try { history = JSON.parse(localStorage.getItem('diceHistory') || '[]'); } catch (e) { history = []; }
@@ -846,6 +853,8 @@ const $types = document.getElementById('types');
 const $count = document.getElementById('count');
 const $weight = document.getElementById('weight');
 const $weightVal = document.getElementById('weightVal');
+const $gravity = document.getElementById('gravity');
+const $gravityVal = document.getElementById('gravityVal');
 const $countRow = document.getElementById('countRow');
 const $roll = document.getElementById('roll');
 const $last = document.getElementById('last');
@@ -863,8 +872,10 @@ for (const s of [4, 6, 8, 10, 12, 20, 100]) {
 document.getElementById('minus').onclick = () => { count = Math.max(1, count - 1); syncUI(); };
 document.getElementById('plus').onclick = () => { count = Math.min(10, count + 1); syncUI(); };
 document.getElementById('weight').oninput = (e) => { weight = e.target.value / 100; syncUI(); saveHistory(); };
+document.getElementById('gravity').oninput = (e) => { gravityMul = e.target.value / 100; world.gravity.set(0, -24 * gravityMul, 0); syncUI(); };
 // clamp weight (older saved sessions may have sub-1x values; slider now starts at 1x)
 weight = Math.max(1, weight);
+world.gravity.set(0, -24 * gravityMul, 0);
 document.getElementById('clear').onclick = () => { history = []; saveHistory(); renderHistory(); };
 $roll.onclick = roll;
 addEventListener('keydown', e => {
@@ -876,6 +887,8 @@ function syncUI() {
   $count.textContent = count;
   $weightVal.textContent = weight.toFixed(2).replace(/\.?0+$/, '') + '×';
   $weight.value = Math.round(weight * 100);
+  $gravityVal.textContent = gravityMul.toFixed(2).replace(/\.?0+$/, '') + '×';
+  $gravity.value = Math.round(gravityMul * 100);
   $countRow.classList.toggle('disabled', dieType === 100);
   $roll.textContent = rolling ? 'ROLLING\u2026' : `ROLL ${count}d${dieType === 100 ? '100' : dieType}`;
 }
