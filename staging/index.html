@@ -1068,7 +1068,7 @@ function clack(impact) {
   o.type = 'triangle';
   o.frequency.setValueAtTime(140 + Math.random() * 160, t);
   o.frequency.exponentialRampToValueAtTime(70, t + 0.07);
-  const vol = Math.min(0.3, 0.05 + impact * 0.022);
+  const vol = Math.min(0.45, (0.05 + impact * 0.022) * 1.5);  // 50% louder
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
   o.connect(g).connect(audioCtx.destination);
