@@ -826,7 +826,7 @@ function buildType(sides) {
     ];
     const geo = chamferGeometry(verts, faces, 3, edgeMode);
     const normals = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-    return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 * scale };
+    return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 * scale, verts, faces };
   }
   const fontScale = sides === 100 ? 0.72 : sides === 10 ? 0.85 : 1; // d100/d10 glyphs smaller to fit 2-3 digit values
   const { tex } = makeAtlas(sides === 4 ? data.values.map(() => null) : data.values, atlasCols, fontScale);
@@ -1254,6 +1254,87 @@ function nudgeDie(d) {
   d.body.angularVelocity.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
   d.restFrames = 0;
 }
+// gentle topple: a die balanced on an edge gets a soft tap so it falls flat on
+// its own — reads as the die finishing its wobble, never as a correction
+function toppleNudge(d) {
+  const a = Math.random() * Math.PI * 2;
+  d.body.allowSleep = false;
+  d.body.wakeUp();
+  d.body.velocity.set(Math.cos(a) * 0.5, 0.25, Math.sin(a) * 0.5);
+  d.body.angularVelocity.set((Math.random() - 0.5) * 1.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 1.6);
+  d.restFrames = 0;
+}
+// best face-up dot for a die (1 = perfectly flat on a face)
+function flatDot(d) {
+  const q = d.body.quaternion, up = new CANNON.Vec3(0, 1, 0);
+  let best = -Infinity;
+  d.info.faceNormalsArr.forEach(nrm => {
+    const wn = q.vmult(new CANNON.Vec3(nrm.x, nrm.y, nrm.z));
+    const dot = d.info.downFacing ? -wn.dot(up) : wn.dot(up);
+    if (dot > best) best = dot;
+  });
+  return best;
+}
+// lowest hull vertex y and horizontal footprint for orientation q
+function hullShape(info, q) {
+  const Q = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+  const M = new THREE.Matrix4().makeRotationFromQuaternion(Q);
+  const v = new THREE.Vector3();
+  let lowY = Infinity, rX = 0, rZ = 0;
+  for (const w of info.verts) {
+    v.set(w[0], w[1], w[2]).applyMatrix4(M);
+    if (v.y < lowY) lowY = v.y;
+    rX = Math.max(rX, Math.abs(v.x)); rZ = Math.max(rZ, Math.abs(v.z));
+  }
+  return { lowY, rX, rZ };
+}
+// smooth, near-invisible settle: rotate the die flat around its closest face
+// (a die resting on an edge/vertex is impossible for a convex die — never freeze one)
+function snapFlat(d) {
+  const q = d.body.quaternion, up = new CANNON.Vec3(0, 1, 0);
+  let best = -Infinity, bi = 0;
+  d.info.faceNormalsArr.forEach((nrm, i) => {
+    const wn = q.vmult(new CANNON.Vec3(nrm.x, nrm.y, nrm.z));
+    const dot = d.info.downFacing ? -wn.dot(up) : wn.dot(up);
+    if (dot > best) { best = dot; bi = i; }
+  });
+  const wn = q.vmult(new CANNON.Vec3(d.info.faceNormalsArr[bi].x, d.info.faceNormalsArr[bi].y, d.info.faceNormalsArr[bi].z));
+  const nW = new THREE.Vector3(wn.x, wn.y, wn.z).normalize();
+  const tW = new THREE.Vector3(0, d.info.downFacing ? -1 : 1, 0);
+  const q0 = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+  const qTo = new THREE.Quaternion().setFromUnitVectors(nW, tW).multiply(q0).normalize();
+  const sh = hullShape(d.info, qTo);
+  const p = d.body.position;
+  const innerX = WALL_X - wallThk / 2, innerBack = BACK_Z + wallThk / 2, innerFront = FRONT_Z - wallThk / 2;
+  const pad = 0.05;
+  let tx = THREE.MathUtils.clamp(p.x, -(innerX - sh.rX - pad), innerX - sh.rX - pad);
+  let tz = THREE.MathUtils.clamp(p.z, innerBack + sh.rZ + pad, innerFront - sh.rZ - pad);
+  let ty = -sh.lowY;
+  // don't sink into other dice: resolve overlap by lifting or shoving aside
+  const shim = { info: d.info, body: { position: new CANNON.Vec3(tx, ty, tz), quaternion: qTo } };
+  for (let iter = 0; iter < 8; iter++) {
+    let any = false;
+    for (const o of activeDice) {
+      if (o === d) continue;
+      const ov = satOverlap(shim, o);
+      if (ov.depth <= 0.002 || !ov.dir) continue;
+      if (ov.dir.y > 0.25) ty += ov.depth * ov.dir.y;
+      else { tx += ov.depth * ov.dir.x; tz += ov.depth * ov.dir.z; }
+      shim.body.position.set(tx, ty, tz);
+      any = true;
+    }
+    if (!any) break;
+  }
+  tx = THREE.MathUtils.clamp(tx, -(innerX - sh.rX - pad), innerX - sh.rX - pad);
+  tz = THREE.MathUtils.clamp(tz, innerBack + sh.rZ + pad, innerFront - sh.rZ - pad);
+  d.body.quaternion.set(qTo.x, qTo.y, qTo.z, qTo.w);
+  d.body.position.set(tx, ty, tz);
+  d.value = readDie(d, true);
+  d.done = true;
+  d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
+  d.body.allowSleep = true; d.body.sleep();
+  d.snap = { q0, p0: new THREE.Vector3(p.x, p.y, p.z), q1: qTo.clone(), p1: new THREE.Vector3(tx, ty, tz), t0: performance.now(), dur: 280 };
+}
 function spawnFloater(pos, value, size) {
   const cv = document.createElement('canvas'); cv.width = cv.height = 256;
   const ctx = cv.getContext('2d');
@@ -1277,6 +1358,7 @@ function finishRoll() {
   rolling = false;
   // pin every die: value is read and recorded, so nothing may creep afterwards
   activeDice.forEach(d => {
+    if (flatDot(d) < 0.995) { snapFlat(d); return; }  // never freeze a tilted die
     d.body.velocity.set(0, 0, 0);
     d.body.angularVelocity.set(0, 0, 0);
     d.body.allowSleep = true;
@@ -1329,6 +1411,8 @@ window.getTHREE = () => THREE;
 window.world = () => world;
 window.CANNON = CANNON;
 window.dieMat = () => dieMat;
+window.snapFlat = snapFlat;
+window.flatDot = flatDot;
 
 /* ---------------- loop ---------------- */
 const clock = new THREE.Clock();
@@ -1447,27 +1531,38 @@ function physStep() {
       const settled = d.restFrames >= 6 || d.body.sleepState === 2 ||
                       (age > 4000 && d.restFrames >= 2) || age > 5500;
       if (settled) {
-        const v = readDie(d, false);
-        if (v != null) {
-          d.value = v; d.done = true;
-          d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
-          d.body.allowSleep = true; d.body.sleep();   // pin it: nothing may disturb the read
-        } else if (d.nudges < 3 && age < 5200) {
-          d.nudges++; nudgeDie(d);                    // cocked die — hop it free
-        } else {
-          d.value = readDie(d, true); d.done = true;  // give up nudging, take closest face
-          d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
-          d.body.allowSleep = true; d.body.sleep();
+        const dot = flatDot(d);
+        if (dot >= 0.995) {                       // flat on a face — read and pin
+          const v = readDie(d, false);
+          if (v != null) {
+            d.value = v; d.done = true;
+            d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
+            d.body.allowSleep = true; d.body.sleep();   // pin it: nothing may disturb the read
+          }
+        }
+        if (!d.done) {
+          if (d.nudges < 3 && age < 4200) {
+            d.nudges++;
+            if (dot < 0.95) nudgeDie(d);          // badly cocked — hop it free
+            else toppleNudge(d);                  // balanced on an edge — soft tap, it falls flat
+          } else {
+            snapFlat(d);                          // out of patience: settle it flat, smoothly
+          }
         }
       }
     }
-    d.mesh.position.copy(d.body.position);
-    d.mesh.quaternion.copy(d.body.quaternion);
+    if (!d.snap) {
+      d.mesh.position.copy(d.body.position);
+      d.mesh.quaternion.copy(d.body.quaternion);
+    }
   }
   if (rolling && (simTime - rollStart > 7000 || activeDice.every(d => d.done))) {
     separateDice();
     activeDice.forEach(d => {
-      if (d.value == null) d.value = readDie(d, true);
+      if (d.value == null) {
+        if (flatDot(d) < 0.995) { snapFlat(d); return; }  // settle flat, never frozen tilted
+        d.value = readDie(d, true);
+      }
       d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
       d.body.allowSleep = true; d.body.sleep();
     });
@@ -1485,6 +1580,19 @@ function animate() {
     if (age > 3) { scene.remove(f.sprite); floaters.splice(i, 1); continue; }
     f.sprite.material.opacity = Math.min(1, (3 - age) / 1);
     f.sprite.position.y += dt * 0.4;
+  }
+  // smooth flat-settle tweens (snapFlat): drive mesh + sleeping body by wall time
+  const nowMs = performance.now();
+  for (const d of activeDice) {
+    if (!d.snap) continue;
+    const s = Math.min(1, (nowMs - d.snap.t0) / d.snap.dur);
+    const e = 1 - Math.pow(1 - s, 3);
+    const qq = d.snap.q0.clone().slerp(d.snap.q1, e);
+    const pp = d.snap.p0.clone().lerp(d.snap.p1, e);
+    d.mesh.position.copy(pp); d.mesh.quaternion.copy(qq);
+    d.body.position.set(pp.x, pp.y, pp.z);
+    d.body.quaternion.set(qq.x, qq.y, qq.z, qq.w);
+    if (s >= 1) d.snap = null;
   }
   controls.update();
   renderer.render(scene, camera);
