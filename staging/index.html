@@ -34,10 +34,10 @@
   .row .lbl { margin:0 0 0 4px; }
   #weightRow { gap:10px; }
   #edges, #weight, #gravity, #momentum { flex:1; height:6px; -webkit-appearance:none; appearance:none; background:rgba(255,255,255,.18); border-radius:3px; outline:none; cursor:pointer; }
-  #edges::-webkit-slider-thumb, #weight::-webkit-slider-thumb, #gravity::-webkit-slider-thumb, #momentum::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
+  #edges::-webkit-slider-thumb, #weight::-webkit-slider-thumb, #gravity::-webkit-slider-thumb, #momentum::-webkit-slider-thumb, #size::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
   #edges::-moz-range-thumb, #weight::-moz-range-thumb, #gravity::-moz-range-thumb, #momentum::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
   /* value spans get a FIXED width: text like "1×" vs "2.75×" must never resize the slider track */
-  #edgesVal, #weightVal, #gravityVal, #momentumVal { font-size:15px; font-weight:700; color:#e8e4d8; width:54px; flex:0 0 54px; text-align:right; }
+  #edgesVal, #weightVal, #gravityVal, #momentumVal, #sizeVal { font-size:15px; font-weight:700; color:#e8e4d8; width:54px; flex:0 0 54px; text-align:right; }
   .row.disabled { opacity:.35; pointer-events:none; }
   #roll {
     margin-top:14px; padding:13px 0; width:100%; border:none; border-radius:10px; cursor:pointer;
@@ -81,7 +81,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.14-staging</span></h1>
+  <h1>Dice Table <span id="ver">V1.2.15-STAGING</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -96,19 +96,24 @@
     <input id="edges" type="range" min="0" max="2" step="1" value="1">
     <span id="edgesVal">Chamfer</span>
   </div>
+  <div class="lbl">Size</div>
+  <div class="row" id="sizeRow">
+    <input id="size" type="range" min="100" max="500" step="5" value="100">
+    <span id="sizeVal">1.0×</span>
+  </div>
   <div class="lbl">Weight</div>
   <div class="row" id="weightRow">
-    <input id="weight" type="range" min="100" max="400" step="5" value="100">
+    <input id="weight" type="range" min="100" max="500" step="5" value="100">
     <span id="weightVal">1.0×</span>
   </div>
   <div class="lbl">Gravity</div>
   <div class="row" id="gravityRow">
-    <input id="gravity" type="range" min="100" max="400" step="5" value="100">
+    <input id="gravity" type="range" min="100" max="500" step="5" value="100">
     <span id="gravityVal">1.0×</span>
   </div>
   <div class="lbl">Momentum</div>
   <div class="row" id="momentumRow">
-    <input id="momentum" type="range" min="100" max="400" step="5" value="100">
+    <input id="momentum" type="range" min="100" max="500" step="5" value="100">
     <span id="momentumVal">1.0×</span>
   </div>
   <button id="roll">ROLL</button>
@@ -807,8 +812,9 @@ function d100Data(scale) {
 }
 
 /* ---------------- per-type build ---------------- */
-function buildType(sides) {
-  const scale = { 4:0.7, 6:0.9, 8:1.122, 10:1.21, 12:1.1, 20:1.3728, 100:2.0 }[sides];
+function buildType(sides, mul) {
+  mul = mul || 1;
+  const scale = { 4:0.7, 6:0.9, 8:1.122, 10:1.21, 12:1.1, 20:1.3728, 100:2.0 }[sides] * mul;
   let data, atlasCols;
   if (sides === 100) { data = d100Data(scale); atlasCols = 10; }
   else if (sides === 4) { data = d4Data(scale); atlasCols = 2; }
@@ -826,13 +832,16 @@ function buildType(sides) {
     ];
     const geo = chamferGeometry(verts, faces, 3, edgeMode);
     const normals = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-    return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 * scale, verts, faces };
+    return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 * scale, rad:s * Math.sqrt(3), verts, faces };
   }
   const fontScale = sides === 100 ? 0.72 : sides === 10 ? 0.85 : 1; // d100/d10 glyphs smaller to fit 2-3 digit values
   const { tex } = makeAtlas(sides === 4 ? data.values.map(() => null) : data.values, atlasCols, fontScale);
   const geo = chamferGeometry(data.verts, data.faces, atlasCols, edgeMode);
   const normals = faceNormals(data.verts, data.faces);
   const out = { geo, tex, values:data.values, faceNormalsArr:normals, verts:data.verts, faces:data.faces };
+  // true circumradius (max |v|): physics spawn sizing — distinct from size, which
+  // only feeds the result floater sprite
+  out.rad = Math.max(...data.verts.map(v => Math.hypot(v[0], v[1], v[2])));
   if (sides === 4) {
     out.downFacing = true;
     // vertex label decals
@@ -953,7 +962,7 @@ scene.add(wallMesh);
 
 /* ---------------- physics ---------------- */
 const world = new CANNON.World({ gravity:new CANNON.Vec3(0, -24, 0) });
-// gravity slider (1x-4x) scales world.gravity directly; the weight gBoost force hack
+// gravity slider (1x-5x) scales world.gravity directly; the weight gBoost force hack
 // reads world.gravity each step, so both scale together and 1x stays the old default
 world.broadphase = new CANNON.SAPBroadphase(world);
 world.allowSleep = true;
@@ -975,14 +984,14 @@ world.addContactMaterial(dieGroundCM); world.addContactMaterial(dieWallCM); worl
 // contact materials + damping on every roll AND apply a per-die gravity boost:
 // heavy dice fall noticeably harder, light dice float a little.
 function applyWeightTuning(w) {
-  const bounce = Math.pow(w, -1.1);    // 0.25x → 4.9 (super bouncy), 4x → 0.22 (stone dead)
+  const bounce = Math.pow(w, -1.1);    // 0.25x → 4.9 (super bouncy), 5x → 0.17 (stone dead)
   const drag   = Math.pow(w, -0.30);   // heavy dice carry momentum, light dice bleed speed (light end no longer reachable: slider starts at 1x)
   dieGroundCM.restitution = 0.2 * bounce;
   dieWallCM.restitution   = 0.5 * bounce;
   dieDieCM.restitution    = 0.45 * bounce;
   // extra downward acceleration (times gravity) beyond the world's -24: 1x → 0,
-  // 4x → ~1.9× extra (falls ~2.4× faster). Capped lower than w^1.2 so heavy dice
-  // don't hit so hard they bounce clear over the walls.
+  // 5x → ~2.6× extra (falls noticeably faster). Capped lower than w^1.2 so heavy
+  // dice don't hit so hard they visually clear the wall tops on the rebound.
   const gBoost = Math.pow(w, 0.7) - 1;  // 4x → ~1.9× extra
   return { bounce, drag, gBoost };
 }
@@ -1009,9 +1018,10 @@ wallPlane(0, -1, 0, FRONT_Z - wallThk/2);
 
 /* ---------------- dice ---------------- */
 const typeCache = {};
-function getType(sides) {
-  const key = sides + '_' + edgeMode;   // rebuild geometry when the edge style changes
-  if (!typeCache[key]) typeCache[key] = buildType(sides);
+function getType(sides, mul) {
+  mul = mul || 1;
+  const key = sides + '_' + edgeMode + '_' + mul.toFixed(2);   // rebuild geometry when edge style or size changes
+  if (!typeCache[key]) typeCache[key] = buildType(sides, mul);
   return typeCache[key];
 }
 const activeDice = [];
@@ -1019,13 +1029,14 @@ const floaters = [];
 
 function makeCannonShape(sides, info) {
   if (info.sphere) return new CANNON.Sphere(info.size);
-  if (sides === 6) return new CANNON.Box(new CANNON.Vec3(0.5*0.9, 0.5*0.9, 0.5*0.9));
+  if (sides === 6) return new CANNON.Box(new CANNON.Vec3(Math.abs(info.verts[0][0]), Math.abs(info.verts[0][1]), Math.abs(info.verts[0][2])));
   return new CANNON.ConvexPolyhedron({
     vertices: info.verts.map(v => new CANNON.Vec3(...v)),
     faces: outwardFaces(info.verts, info.faces)
   });
 }
-function makeDieMesh(sides, info) {
+function makeDieMesh(sides, info, mul) {
+  mul = mul || 1;
   const mat = new THREE.MeshStandardMaterial({ map:info.tex, roughness:0.42, metalness:0.03 });
   const mesh = new THREE.Mesh(info.geo, mat);
   mesh.castShadow = true; mesh.receiveShadow = true;
@@ -1044,7 +1055,7 @@ function makeDieMesh(sides, info) {
           map:new THREE.CanvasTexture(cv), transparent:true, polygonOffset:true, polygonOffsetFactor:-2
         });
       }
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), decalMats[d.value]);
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(0.55 * mul, 0.55 * mul), decalMats[d.value]);
       p.position.copy(d.pos); p.quaternion.copy(d.quat);
       mesh.add(p);
     }
@@ -1076,9 +1087,9 @@ function clack(impact) {
 }
 
 /* ---------------- game state & UI ---------------- */
-let dieType = 6, count = 2, edgeMode = 1, weight = 1.0, gravityMul = 1.0, momentumMul = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
+let dieType = 6, count = 2, edgeMode = 1, weight = 1.0, gravityMul = 1.0, momentumMul = 1.0, sizeMul = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
 const EDGE_NAMES = ['None', 'Chamfer', 'Round'];
-window.__dbg = () => ({ weight, edgeMode, rolling, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice });
+window.__dbg = () => ({ weight, edgeMode, sizeMul, rolling, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice });
 let history = [];
 try { history = JSON.parse(localStorage.getItem('diceHistory') || '[]'); } catch (e) { history = []; }
 
@@ -1090,6 +1101,8 @@ const $gravity = document.getElementById('gravity');
 const $gravityVal = document.getElementById('gravityVal');
 const $momentum = document.getElementById('momentum');
 const $momentumVal = document.getElementById('momentumVal');
+const $size = document.getElementById('size');
+const $sizeVal = document.getElementById('sizeVal');
 const $edges = document.getElementById('edges');
 const $edgesVal = document.getElementById('edgesVal');
 const $countRow = document.getElementById('countRow');
@@ -1111,12 +1124,13 @@ document.getElementById('plus').onclick = () => { count = Math.min(10, count + 1
 document.getElementById('weight').oninput = (e) => { weight = e.target.value / 100; syncUI(); saveHistory(); };
 document.getElementById('gravity').oninput = (e) => { gravityMul = e.target.value / 100; world.gravity.set(0, -24 * gravityMul, 0); syncUI(); };
 document.getElementById('momentum').oninput = (e) => { momentumMul = e.target.value / 100; syncUI(); };
+document.getElementById('size').oninput = (e) => { sizeMul = e.target.value / 100; syncUI(); };
 document.getElementById('edges').oninput = (e) => {
   edgeMode = +e.target.value;
   syncUI();
   // rebuild geometry of dice already on the table so the change is visible immediately
   for (const d of activeDice) {
-    const info = getType(d.sides);
+    const info = getType(d.sides, d.sizeMul);
     d.info = info;
     d.mesh.geometry.dispose();
     d.mesh.geometry = info.geo;
@@ -1140,6 +1154,8 @@ function syncUI() {
   $gravity.value = Math.round(gravityMul * 100);
   $momentumVal.textContent = momentumMul.toFixed(2).replace(/\.?0+$/, '') + '×';
   $momentum.value = Math.round(momentumMul * 100);
+  $sizeVal.textContent = sizeMul.toFixed(2).replace(/\.?0+$/, '') + '×';
+  $size.value = Math.round(sizeMul * 100);
   $edgesVal.textContent = EDGE_NAMES[edgeMode];
   $edges.value = edgeMode;
   $countRow.classList.toggle('disabled', dieType === 100);
@@ -1193,12 +1209,12 @@ function roll() {
   for (const f of floaters) scene.remove(f.sprite);
   floaters.length = 0;
 
-  const info = getType(dieType);
+  const info = getType(dieType, sizeMul);
   const n = count;
   const tuning = applyWeightTuning(weight);
   currentGBoost = tuning.gBoost;
   for (let i = 0; i < n; i++) {
-    const mesh = makeDieMesh(dieType, info);
+    const mesh = makeDieMesh(dieType, info, sizeMul);
     const body = new CANNON.Body({
       mass:0.3 * weight,
       shape:makeCannonShape(dieType, info),
@@ -1207,8 +1223,32 @@ function roll() {
       angularDamping:0.4 * Math.pow(weight, -0.10),
       sleepSpeedLimit:0.4, sleepTimeLimit:0.35, allowSleep:true
     });
-    const spread = Math.min(5.6, (i - (n - 1) / 2) * 1.25);
-    body.position.set(spread + (Math.random() - 0.5) * 0.25, 7.6 + Math.random() * 0.8, 6.2 + (i % 2) * 1.6);
+    // size-aware spawn: normal-size dice keep the legacy layout; giant dice get a
+    // grid with ≥ ~diameter clearance in x/z/y so they never spawn overlapping
+    // (deep overlap makes the solver blast them apart at spawn)
+    const R = info.rad || info.size || 0.6;
+    let spread, z, y;
+    if (R <= 0.8) {
+      spread = Math.min(5.6, (i - (n - 1) / 2) * 1.25);
+      z = 6.2 + (i % 2) * 1.6;
+      y = 7.6 + Math.random() * 0.8;
+    } else {
+      const spacing = Math.max(1.25, 2.4 * R);
+      const maxX = WALL_X - 1.1 - R;
+      const perRow = Math.max(1, Math.min(n, Math.floor((2 * maxX) / spacing) + 1));
+      const zBack = BACK_Z + 1.2 + R, zFront = FRONT_Z - 1.2 - R;
+      const zPerLayer = Math.max(1, Math.floor((zFront - zBack) / spacing) + 1);
+      const layerCap = perRow * zPerLayer;
+      const layer = Math.floor(i / layerCap), idx = i % layerCap;
+      const col = idx % perRow, zrow = Math.floor(idx / perRow) % zPerLayer;
+      const cap = Math.min(layerCap, n - layer * layerCap);
+      const rowsThis = Math.ceil(cap / perRow);
+      const zMid = (zBack + zFront) / 2;
+      spread = Math.min(maxX, Math.max(-maxX, col * spacing - (Math.min(n, perRow) - 1) * spacing / 2));
+      z = zMid - (rowsThis - 1) * spacing / 2 + zrow * spacing;
+      y = Math.max(7.6 + Math.random() * 0.8, R + 1.2) + layer * spacing * 0.95;
+    }
+    body.position.set(spread + (Math.random() - 0.5) * 0.25, y, z);
     // forward momentum: throw speed toward the back of the tray, scaled by the Momentum slider
     body.velocity.set((Math.random() - 0.5) * 7, -2 - Math.random(), -(11 + Math.random() * 4) * momentumMul);
     body.angularVelocity.set((Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26);
@@ -1225,7 +1265,7 @@ function roll() {
     scene.add(mesh);
     world.addBody(body);
     // value is decided by physics — nothing is drawn up front
-    activeDice.push({ mesh, body, info, sides:dieType, value:null, done:false, restFrames:0, nudges:0 });
+    activeDice.push({ mesh, body, info, sides:dieType, value:null, done:false, restFrames:0, nudges:0, sizeMul });
   }
 }
 // Read a die's value from its settled orientation. Returns null when the face
@@ -1483,7 +1523,9 @@ function separateDice() {
     let moved = false;
     for (let i = 0; i < list.length; i++) for (let j = i+1; j < list.length; j++) {
       const a = list[i], b = list[j];
-      if (a.body.position.distanceTo(b.body.position) > 2.5) continue;
+      // distance gate scales with die size so big dice are still checked for overlap
+      const ra = a.info.rad || a.info.size || 0.6, rb = b.info.rad || b.info.size || 0.6;
+      if (a.body.position.distanceTo(b.body.position) > Math.max(2.5, (ra + rb) * 1.15)) continue;
       const ov = satOverlap(a, b);
       if (ov.depth > 0.005) {
         const amt = ov.depth * 0.55;
