@@ -884,14 +884,16 @@ controls.maxPolarAngle = 1.45;
 
 scene.add(new THREE.HemisphereLight(0x8899bb, 0x223028, 0.85));
 const dir = new THREE.DirectionalLight(0xfff2dd, 1.35);
-// near-overhead so wall contact shadows stay thin bands at the base instead of
-// smearing across the felt, and so all four inner wall faces catch some light
-dir.position.set(3, 20, 2);
+// nearly straight overhead: wall contact shadows stay thin bands pressed against
+// the wall base instead of smearing across the felt, and all inner faces catch light
+dir.position.set(1.2, 22, 0.8);
 dir.castShadow = true;
 dir.shadow.mapSize.set(2048, 2048);
-dir.shadow.normalBias = 0.02;  // keep the contact shadow hugging the wall base
-dir.shadow.camera.left = -16; dir.shadow.camera.right = 16;
-dir.shadow.camera.top = 16; dir.shadow.camera.bottom = -16;
+dir.shadow.normalBias = 0.005;  // tiny: avoid acne without detaching the shadow
+// frustum must cover the whole tray — corners sit ~17.7 from center, so a ±16
+// frustum clips the shadow map mid-wall and leaves a diagonal cut on the felt
+dir.shadow.camera.left = -22; dir.shadow.camera.right = 22;
+dir.shadow.camera.top = 22; dir.shadow.camera.bottom = -22;
 scene.add(dir);
 const fill = new THREE.DirectionalLight(0xa8c4ff, 0.6);
 fill.position.set(-8, 5, -6);
