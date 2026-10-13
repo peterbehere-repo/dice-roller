@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>STAGING Dice Table v1.2.20</title>
+<title>STAGING Dice Table v1.2.21</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -65,12 +65,12 @@
     font-size:64px; font-weight:800; color:#f0c96a; text-shadow:0 2px 18px rgba(0,0,0,.65), 0 0 40px rgba(217,164,65,.35);
     opacity:0; font-family:Georgia,serif;
   }
-  #totalPop.show { animation:pop 2.6s ease forwards; }
+  #totalPop.show { animation:pop 4.1s ease forwards; }
   @keyframes pop {
     0% { opacity:0; transform:translateX(-50%) scale(.6); }
     12% { opacity:1; transform:translateX(-50%) scale(1.08); }
     22% { transform:translateX(-50%) scale(1); }
-    78% { opacity:1; }
+    86% { opacity:1; }
     100% { opacity:0; transform:translateX(-50%) scale(1); }
   }
   @media (max-width:700px) {
@@ -81,7 +81,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.20</span></h1>
+  <h1>Dice Table <span id="ver">v1.2.21</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -1097,7 +1097,7 @@ function clack(impact) {
 /* ---------------- game state & UI ---------------- */
 let dieType = 6, count = 2, edgeMode = 2, weight = 1.0, gravityMul = 1.0, momentumMul = 1.0, sizeMul = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
 const EDGE_NAMES = ['None', 'Chamfer', 'Round'];
-window.__dbg = () => ({ weight, edgeMode, sizeMul, rolling, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice });
+window.__dbg = () => ({ weight, edgeMode, sizeMul, rolling, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice, floaters: floaters.length });
 let history = [];
 try { history = JSON.parse(localStorage.getItem('diceHistory') || '[]'); } catch (e) { history = []; }
 
@@ -1627,8 +1627,8 @@ function animate() {
   for (let i = floaters.length - 1; i >= 0; i--) {
     const f = floaters[i];
     const age = (now - f.sprite.userData.born) / 1000;
-    if (age > 3) { scene.remove(f.sprite); floaters.splice(i, 1); continue; }
-    f.sprite.material.opacity = Math.min(1, (3 - age) / 1);
+    if (age > 4.5) { scene.remove(f.sprite); floaters.splice(i, 1); continue; }
+    f.sprite.material.opacity = Math.min(1, (4.5 - age) / 1);
     f.sprite.position.y += dt * 0.4;
   }
   // smooth flat-settle tweens (snapFlat): drive mesh + sleeping body by wall time
