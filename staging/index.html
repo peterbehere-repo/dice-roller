@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>STAGING Dice Table v1.2.23</title>
+<title>STAGING Dice Table v1.2.24</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -21,6 +21,8 @@
   .phead h1 { margin-bottom:0; }
   #panelGrab { display:none; touch-action:none; padding:6px 0 2px; margin:-4px 0 8px; cursor:grab; }
   #panelGrab span { display:block; width:44px; height:4px; border-radius:2px; background:rgba(255,255,255,.22); margin:0 auto; }
+  #panelGrab:active { cursor:grabbing; }
+  #panelGrab:active span { background:rgba(255,255,255,.4); }
   @media (max-width:700px) { #panelGrab { display:block; } }
   #panel h1 #ver { font-size:11px; vertical-align:middle; color:#8a94a0; letter-spacing:.08em; margin-left:6px; }
   #collapseBtn {
@@ -106,8 +108,10 @@
   @media (max-width:700px) {
     #panel { left:8px; right:8px; width:auto; top:auto; bottom:8px; max-height:46vh; padding:12px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:#3a4450 transparent; }
     #panel.tall { max-height:88vh; }
-    #panel.collapsed { transform:translateY(calc(100% + 24px)); }
-    #tabBar { left:8px; top:auto; bottom:8px; }
+    #panel.collapsed { transform:translateY(calc(100% - 24px)); }
+    #collapseBtn { display:none; }
+    #panelTab { display:none; }
+    #tabBar { left:8px; top:8px; bottom:auto; }
   }
 </style>
 </head>
@@ -116,7 +120,7 @@
 <div id="panel">
   <div id="panelGrab" aria-hidden="true"><span></span></div>
   <div class="phead">
-    <h1>Dice Table <span id="ver">v1.2.23</span></h1>
+    <h1>Dice Table <span id="ver">v1.2.24</span></h1>
     <button id="collapseBtn" aria-label="Collapse panel" aria-expanded="true" title="Collapse panel">&lsaquo;</button>
   </div>
   <div class="lbl">Die type</div>
@@ -1183,29 +1187,55 @@ $panel.style.touchAction = 'pan-y';
 let panelSwipe = null;
 const isMobileLayout = () => matchMedia('(max-width:700px)').matches;
 $panel.addEventListener('pointerdown', e => {
-  const onGrab = !!e.target.closest('#panelGrab');
-  if (!onGrab && e.target.closest('input, button, #history')) return;
-  if (!onGrab && isMobileLayout()) return; // mobile: panel scrolls; vertical gestures live on the grabber
+  if (e.target.closest('input, button, #history, #panelGrab')) return;
+  if (isMobileLayout()) return; // mobile: panel scrolls; the grabber handles raise/lower
   panelSwipe = { x: e.clientX, y: e.clientY, id: e.pointerId };
 });
 $panel.addEventListener('pointermove', e => {
   if (!panelSwipe || e.pointerId !== panelSwipe.id) return;
   const dx = e.clientX - panelSwipe.x, dy = e.clientY - panelSwipe.y;
-  const hitH = Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4;
-  const hitV = Math.abs(dy) > 50 && Math.abs(dy) > Math.abs(dx) * 1.4;
-  if (!hitH && !hitV) return;
+  if (!(Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4)) return;
   panelSwipe = null;
-  if (isMobileLayout()) {
-    // vertical only: up expands to tall (all features), down shrinks tall first, then collapses
-    if (dy < 0) $panel.classList.add('tall');
-    else if ($panel.classList.contains('tall')) $panel.classList.remove('tall');
-    else setPanelCollapsed(true);
-  } else if (dx < 0) {
-    setPanelCollapsed(true);
+  setPanelCollapsed(dx < 0);
+});
+for (const t of ['pointerup', 'pointercancel']) $panel.addEventListener(t, () => panelSwipe = null);
+
+/* grabber: finger-following raise/lower on mobile — panel tracks the finger, snaps on release */
+const $panelGrab = document.getElementById('panelGrab');
+let grabDrag = null;
+$panelGrab.addEventListener('pointerdown', e => {
+  grabDrag = { id: e.pointerId, y0: e.clientY, dy: 0, collapsed: panelCollapsed, tall: $panel.classList.contains('tall') };
+  $panel.style.transition = 'none';
+  try { $panelGrab.setPointerCapture(e.pointerId); } catch {}
+});
+$panelGrab.addEventListener('pointermove', e => {
+  if (!grabDrag || e.pointerId !== grabDrag.id) return;
+  grabDrag.dy = e.clientY - grabDrag.y0;
+  if (grabDrag.collapsed) {
+    if (grabDrag.dy > 0) return; // already down; only raise from here
+    $panel.style.transform = `translateY(calc(100% - 24px + ${grabDrag.dy}px))`;
   } else {
-    setPanelCollapsed(false);
+    if (grabDrag.tall && grabDrag.dy < 0) return; // already fully raised
+    $panel.style.transform = `translateY(${grabDrag.dy}px)`;
   }
 });
+function grabRelease(e) {
+  if (!grabDrag || e.pointerId !== grabDrag.id) return;
+  const { dy, collapsed, tall } = grabDrag;
+  grabDrag = null;
+  $panel.style.transition = '';
+  $panel.style.transform = '';
+  if (collapsed) {
+    if (dy < -60) setPanelCollapsed(false); // raised far enough -> restore
+  } else if (dy > 70) {
+    if (tall) $panel.classList.remove('tall'); // shrink from tall first
+    else setPanelCollapsed(true); // collapse from normal
+  } else if (dy < -70 && !tall) {
+    $panel.classList.add('tall'); // raise to tall
+  }
+  // otherwise: snap back where it was
+}
+for (const t of ['pointerup', 'pointercancel']) $panelGrab.addEventListener(t, grabRelease);
 for (const t of ['pointerup', 'pointercancel']) $panel.addEventListener(t, () => panelSwipe = null);
 let tabSwipe = null;
 $panelTab.addEventListener('pointerdown', e => tabSwipe = { x: e.clientX, y: e.clientY, id: e.pointerId });
