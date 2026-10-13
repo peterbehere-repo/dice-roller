@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>STAGING Dice Table v1.2.25</title>
+<title>STAGING Dice Table v1.2.26</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -25,9 +25,9 @@
   #panelGrab:active span { background:rgba(255,255,255,.4); }
   #histBtn {
     position:fixed; top:8px; right:8px; z-index:11; display:none; align-items:center;
-    padding:9px 14px; border-radius:999px; border:1px solid rgba(255,255,255,.14); cursor:pointer;
+    padding:10px 16px; border-radius:999px; border:1px solid rgba(255,255,255,.14); cursor:pointer;
     background:rgba(12,16,22,.84); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-    color:#e8e4d8; font-size:13px; font-weight:600; letter-spacing:.06em; box-shadow:0 8px 32px rgba(0,0,0,.5);
+    color:#e8e4d8; font-size:15px; font-weight:600; letter-spacing:.06em; box-shadow:0 8px 32px rgba(0,0,0,.5);
   }
   #histOverlay { position:fixed; inset:0; z-index:12; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
   #histOverlay.open { display:flex; }
@@ -58,8 +58,8 @@
   #panelTab:hover { background:rgba(28,34,44,.9); }
   #panelTab .ic { color:#d9a441; font-size:14px; }
   #tabRoll {
-    padding:9px 18px; border:none; border-radius:999px; cursor:pointer;
-    background:linear-gradient(180deg,#e7b64f,#c68f2b); color:#221605; font-size:13px; font-weight:800; letter-spacing:.1em;
+    padding:10px 21px; border:none; border-radius:999px; cursor:pointer;
+    background:linear-gradient(180deg,#e7b64f,#c68f2b); color:#221605; font-size:15px; font-weight:800; letter-spacing:.1em;
     box-shadow:0 3px 12px rgba(217,164,65,.28);
   }
   #tabRoll:hover { filter:brightness(1.08); }
@@ -127,6 +127,8 @@
     #collapseBtn { display:none; }
     #panelTab { display:none; }
     #tabBar { left:8px; top:8px; bottom:auto; }
+    #panel #roll { display:none; }
+    #tabBar { display:flex; }
     #panel #histSec { display:none; }
     #histBtn { display:flex; }
   }
@@ -137,7 +139,7 @@
 <div id="panel">
   <div id="panelGrab" aria-hidden="true"><span></span></div>
   <div class="phead">
-    <h1>Dice Table <span id="ver">v1.2.25</span></h1>
+    <h1>Dice Table <span id="ver">v1.2.26</span></h1>
     <button id="collapseBtn" aria-label="Collapse panel" aria-expanded="true" title="Collapse panel">&lsaquo;</button>
   </div>
   <div class="lbl">Die type</div>
