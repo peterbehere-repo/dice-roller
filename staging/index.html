@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>STAGING Dice Table v1.2.24</title>
+<title>STAGING Dice Table v1.2.25</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -23,14 +23,30 @@
   #panelGrab span { display:block; width:44px; height:4px; border-radius:2px; background:rgba(255,255,255,.22); margin:0 auto; }
   #panelGrab:active { cursor:grabbing; }
   #panelGrab:active span { background:rgba(255,255,255,.4); }
-  @media (max-width:700px) { #panelGrab { display:block; } }
+  #histBtn {
+    position:fixed; top:8px; right:8px; z-index:11; display:none; align-items:center;
+    padding:9px 14px; border-radius:999px; border:1px solid rgba(255,255,255,.14); cursor:pointer;
+    background:rgba(12,16,22,.84); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    color:#e8e4d8; font-size:13px; font-weight:600; letter-spacing:.06em; box-shadow:0 8px 32px rgba(0,0,0,.5);
+  }
+  #histOverlay { position:fixed; inset:0; z-index:12; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
+  #histOverlay.open { display:flex; }
+  #histCard {
+    width:min(340px,86vw); max-height:70vh; background:#141a22; border:1px solid rgba(255,255,255,.12);
+    border-radius:14px; padding:14px; box-shadow:0 12px 40px rgba(0,0,0,.6); display:flex; flex-direction:column;
+    position:relative;
+  }
+  #histCard #history { max-height:52vh; }
+  #histClose { position:absolute; top:12px; right:12px; width:34px; height:34px; border-radius:999px; border:1px solid rgba(255,255,255,.14); background:rgba(12,16,22,.9); color:#e8e4d8; font-size:15px; cursor:pointer; padding:0; box-shadow:0 8px 32px rgba(0,0,0,.5); }
+  #histClose:hover { color:#e8e4d8; }
+  @media (max-width:700px) { #panelGrab { display:block; } #panel { overflow:hidden; } }
   #panel h1 #ver { font-size:11px; vertical-align:middle; color:#8a94a0; letter-spacing:.08em; margin-left:6px; }
   #collapseBtn {
     width:30px; height:30px; flex:0 0 30px; border-radius:8px; border:1px solid rgba(255,255,255,.14);
     background:rgba(255,255,255,.05); color:#e8e4d8; font-size:15px; line-height:1; cursor:pointer; padding:0;
   }
   #collapseBtn:hover { background:rgba(255,255,255,.12); }
-  #panel { transition:transform .28s ease; }
+  #panel { transition:transform .28s ease, height .28s ease; }
   #panel.collapsed { transform:translateX(calc(-100% - 24px)); }
   #panelTab {
     display:flex; align-items:center; gap:7px;
@@ -106,12 +122,13 @@
     100% { opacity:0; transform:translateX(-50%) scale(1); }
   }
   @media (max-width:700px) {
-    #panel { left:8px; right:8px; width:auto; top:auto; bottom:8px; max-height:46vh; padding:12px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:#3a4450 transparent; }
-    #panel.tall { max-height:88vh; }
+    #panel { left:8px; right:8px; width:auto; top:auto; bottom:8px; max-height:none; padding:12px; }
     #panel.collapsed { transform:translateY(calc(100% - 24px)); }
     #collapseBtn { display:none; }
     #panelTab { display:none; }
     #tabBar { left:8px; top:8px; bottom:auto; }
+    #panel #histSec { display:none; }
+    #histBtn { display:flex; }
   }
 </style>
 </head>
@@ -120,7 +137,7 @@
 <div id="panel">
   <div id="panelGrab" aria-hidden="true"><span></span></div>
   <div class="phead">
-    <h1>Dice Table <span id="ver">v1.2.24</span></h1>
+    <h1>Dice Table <span id="ver">v1.2.25</span></h1>
     <button id="collapseBtn" aria-label="Collapse panel" aria-expanded="true" title="Collapse panel">&lsaquo;</button>
   </div>
   <div class="lbl">Die type</div>
@@ -159,10 +176,14 @@
   </div>
   <button id="roll">ROLL</button>
   <div id="last"></div>
-  <div class="hist-head"><span class="lbl" style="margin:0">History</span><button id="clear">Clear</button></div>
-  <ul id="history"></ul>
+  <div id="histSec">
+    <div class="hist-head"><span class="lbl" style="margin:0">History</span><button id="clear">Clear</button></div>
+    <ul id="history"></ul>
+  </div>
   <div class="hint">Drag to orbit &middot; Scroll to zoom &middot; R or Space to roll</div>
 </div>
+<button id="histBtn" aria-label="Show roll history">History</button>
+<div id="histOverlay"><div id="histCard"></div><button id="histClose" aria-label="Close history">✕</button></div>
 <div id="tabBar">
   <button id="panelTab" aria-label="Show Dice Table panel"><span class="ic">&#9776;</span> Dice</button>
   <button id="tabRoll" aria-label="Roll dice">ROLL</button>
@@ -1171,7 +1192,12 @@ const $panelTab = document.getElementById('panelTab');
 let panelCollapsed = false;
 function setPanelCollapsed(c) {
   panelCollapsed = c;
-  $panel.classList.toggle('collapsed', c);
+  if (isMobileLayout()) {
+    if (c) $panel.style.height = '36px'; // grab strip only; height stays free otherwise
+  } else {
+    $panel.classList.toggle('collapsed', c);
+    $panel.style.height = '';
+  }
   document.body.classList.toggle('panel-hidden', c);
   $collapseBtn.textContent = c ? '\u203A' : '\u2039';
   $collapseBtn.setAttribute('aria-expanded', String(!c));
@@ -1200,42 +1226,45 @@ $panel.addEventListener('pointermove', e => {
 });
 for (const t of ['pointerup', 'pointercancel']) $panel.addEventListener(t, () => panelSwipe = null);
 
-/* grabber: finger-following raise/lower on mobile — panel tracks the finger, snaps on release */
+/* grabber: finger-following raise/lower on mobile — the panel's height tracks the finger
+   continuously (top edge reaches the screen top), and stays wherever the user releases */
 const $panelGrab = document.getElementById('panelGrab');
 let grabDrag = null;
 $panelGrab.addEventListener('pointerdown', e => {
-  grabDrag = { id: e.pointerId, y0: e.clientY, dy: 0, collapsed: panelCollapsed, tall: $panel.classList.contains('tall') };
+  grabDrag = { id: e.pointerId, y0: e.clientY, h0: $panel.getBoundingClientRect().height };
   $panel.style.transition = 'none';
   try { $panelGrab.setPointerCapture(e.pointerId); } catch {}
 });
 $panelGrab.addEventListener('pointermove', e => {
   if (!grabDrag || e.pointerId !== grabDrag.id) return;
-  grabDrag.dy = e.clientY - grabDrag.y0;
-  if (grabDrag.collapsed) {
-    if (grabDrag.dy > 0) return; // already down; only raise from here
-    $panel.style.transform = `translateY(calc(100% - 24px + ${grabDrag.dy}px))`;
-  } else {
-    if (grabDrag.tall && grabDrag.dy < 0) return; // already fully raised
-    $panel.style.transform = `translateY(${grabDrag.dy}px)`;
-  }
+  const h = Math.max(36, Math.min(grabDrag.h0 + (grabDrag.y0 - e.clientY), innerHeight - 16));
+  $panel.style.height = h + 'px';
 });
 function grabRelease(e) {
   if (!grabDrag || e.pointerId !== grabDrag.id) return;
-  const { dy, collapsed, tall } = grabDrag;
   grabDrag = null;
   $panel.style.transition = '';
-  $panel.style.transform = '';
-  if (collapsed) {
-    if (dy < -60) setPanelCollapsed(false); // raised far enough -> restore
-  } else if (dy > 70) {
-    if (tall) $panel.classList.remove('tall'); // shrink from tall first
-    else setPanelCollapsed(true); // collapse from normal
-  } else if (dy < -70 && !tall) {
-    $panel.classList.add('tall'); // raise to tall
-  }
-  // otherwise: snap back where it was
+  const h = $panel.getBoundingClientRect().height;
+  if (h < 90) setPanelCollapsed(true); // basically minimized -> snap fully down
+  else setPanelCollapsed(false); // keep the released height (mobile branch leaves it alone)
 }
 for (const t of ['pointerup', 'pointercancel']) $panelGrab.addEventListener(t, grabRelease);
+
+/* history: relocates into a top-right overlay on mobile, back into the panel on desktop */
+const $histSec = document.getElementById('histSec');
+const $histOverlay = document.getElementById('histOverlay');
+const $histCard = document.getElementById('histCard');
+const histHome = $histSec.parentElement, histBefore = $histSec.nextSibling;
+function placeHistory(mobile) {
+  if (mobile) $histCard.appendChild($histSec);
+  else histHome.insertBefore($histSec, histBefore);
+}
+const mqMobile = matchMedia('(max-width:700px)');
+mqMobile.addEventListener('change', ev => { placeHistory(ev.matches); if (!ev.matches) $panel.style.height = ''; });
+placeHistory(mqMobile.matches);
+document.getElementById('histBtn').addEventListener('click', () => $histOverlay.classList.toggle('open'));
+document.getElementById('histClose').addEventListener('click', () => $histOverlay.classList.remove('open'));
+$histOverlay.addEventListener('click', e => { if (e.target === $histOverlay) $histOverlay.classList.remove('open'); });
 for (const t of ['pointerup', 'pointercancel']) $panel.addEventListener(t, () => panelSwipe = null);
 let tabSwipe = null;
 $panelTab.addEventListener('pointerdown', e => tabSwipe = { x: e.clientX, y: e.clientY, id: e.pointerId });
