@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>STAGING Dice Table v1.2.26</title>
+<title>STAGING Dice Table v1.2.27</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -139,7 +139,7 @@
 <div id="panel">
   <div id="panelGrab" aria-hidden="true"><span></span></div>
   <div class="phead">
-    <h1>Dice Table <span id="ver">v1.2.26</span></h1>
+    <h1>Dice Table <span id="ver">v1.2.27</span></h1>
     <button id="collapseBtn" aria-label="Collapse panel" aria-expanded="true" title="Collapse panel">&lsaquo;</button>
   </div>
   <div class="lbl">Die type</div>
@@ -956,8 +956,16 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.4, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.minDistance = 5; controls.maxDistance = 30;
+controls.minDistance = 5; controls.maxDistance = 90; // 3x the old 30: 200% further zoom-out headroom
 controls.maxPolarAngle = 1.45;
+{
+  // mobile starts 150% of the desktop default camera distance
+  const t = controls.target, off = camera.position.clone().sub(t);
+  const defaultDist = off.length();
+  const isMobileView = matchMedia('(max-width:700px)').matches;
+  const wantDist = isMobileView ? defaultDist * 1.5 : defaultDist;
+  camera.position.copy(t).add(off.setLength(wantDist));
+}
 
 scene.add(new THREE.HemisphereLight(0x8899bb, 0x223028, 0.85));
 const dir = new THREE.DirectionalLight(0xfff2dd, 1.35);
