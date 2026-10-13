@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dice Table v1.2.14</title>
+<title>Dice Table v1.2.21</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -33,10 +33,11 @@
   #count { min-width:36px; text-align:center; font-size:19px; font-weight:700; }
   .row .lbl { margin:0 0 0 4px; }
   #weightRow { gap:10px; }
-  #weight { flex:1; height:6px; -webkit-appearance:none; appearance:none; background:rgba(255,255,255,.18); border-radius:3px; outline:none; cursor:pointer; }
-  #weight::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
-  #weight::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
-  #weightVal { font-size:15px; font-weight:700; color:#e8e4d8; min-width:44px; text-align:right; }
+  #edges, #weight, #gravity, #momentum, #size { flex:1; height:6px; -webkit-appearance:none; appearance:none; background:rgba(255,255,255,.18); border-radius:3px; outline:none; cursor:pointer; }
+  #edges::-webkit-slider-thumb, #weight::-webkit-slider-thumb, #gravity::-webkit-slider-thumb, #momentum::-webkit-slider-thumb, #size::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
+  #edges::-moz-range-thumb, #weight::-moz-range-thumb, #gravity::-moz-range-thumb, #momentum::-moz-range-thumb, #size::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
+  /* value spans get a FIXED width: text like "1×" vs "2.75×" must never resize the slider track */
+  #edgesVal, #weightVal, #gravityVal, #momentumVal, #sizeVal { font-size:15px; font-weight:700; color:#e8e4d8; width:54px; flex:0 0 54px; text-align:right; }
   .row.disabled { opacity:.35; pointer-events:none; }
   #roll {
     margin-top:14px; padding:13px 0; width:100%; border:none; border-radius:10px; cursor:pointer;
@@ -64,12 +65,12 @@
     font-size:64px; font-weight:800; color:#f0c96a; text-shadow:0 2px 18px rgba(0,0,0,.65), 0 0 40px rgba(217,164,65,.35);
     opacity:0; font-family:Georgia,serif;
   }
-  #totalPop.show { animation:pop 2.6s ease forwards; }
+  #totalPop.show { animation:pop 4.1s ease forwards; }
   @keyframes pop {
     0% { opacity:0; transform:translateX(-50%) scale(.6); }
     12% { opacity:1; transform:translateX(-50%) scale(1.08); }
     22% { transform:translateX(-50%) scale(1); }
-    78% { opacity:1; }
+    86% { opacity:1; }
     100% { opacity:0; transform:translateX(-50%) scale(1); }
   }
   @media (max-width:700px) {
@@ -80,7 +81,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.14</span></h1>
+  <h1>Dice Table <span id="ver">v1.2.21</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -90,10 +91,30 @@
     <button id="plus">+</button>
     <span class="lbl" style="margin:0 0 0 2px">dice</span>
   </div>
+  <div class="lbl">Edges</div>
+  <div class="row" id="edgesRow">
+    <input id="edges" type="range" min="0" max="2" step="1" value="2">
+    <span id="edgesVal">Round</span>
+  </div>
+  <div class="lbl">Size</div>
+  <div class="row" id="sizeRow">
+    <input id="size" type="range" min="100" max="400" step="25" value="100">
+    <span id="sizeVal">1.0×</span>
+  </div>
   <div class="lbl">Weight</div>
   <div class="row" id="weightRow">
-    <input id="weight" type="range" min="100" max="400" step="5" value="100">
+    <input id="weight" type="range" min="100" max="500" step="25" value="100">
     <span id="weightVal">1.0×</span>
+  </div>
+  <div class="lbl">Gravity</div>
+  <div class="row" id="gravityRow">
+    <input id="gravity" type="range" min="100" max="500" step="25" value="100">
+    <span id="gravityVal">1.0×</span>
+  </div>
+  <div class="lbl">Momentum</div>
+  <div class="row" id="momentumRow">
+    <input id="momentum" type="range" min="100" max="1000" step="25" value="100">
+    <span id="momentumVal">1.0×</span>
   </div>
   <button id="roll">ROLL</button>
   <div id="last"></div>
@@ -267,8 +288,10 @@ function outwardFaces(verts, faces) {
 }
 // stay untouched. Normals are explicit per-piece, so faces stay crisp.
 const CHAMFER = 0.06;                      // bevel width (die is ~1 unit)
-function chamferGeometry(verts, faces, cols, pad = 0.055) {
+// edgeMode: 0 = none (sharp edges), 1 = chamfer (planar bevel strips), 2 = round (fillet arcs)
+function chamferGeometry(verts, faces, cols, mode = 1, pad = 0.055) {
   const V3 = THREE.Vector3;
+  const CH = mode === 0 ? 0 : CHAMFER;
   const nrm = faceNormals(verts, faces);
   const rows0 = Math.ceil(faces.length / cols);
 
@@ -300,7 +323,7 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
       const a = P2[(i - 1 + m) % m], b = P2[i], c = P2[(i + 1) % m];
       const off = (p, q) => {
         const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1e-9;
-        return { px: p[0] - dy / L * CHAMFER, py: p[1] + dx / L * CHAMFER, dx, dy };
+        return { px: p[0] - dy / L * CH, py: p[1] + dx / L * CH, dx, dy };
       };
       const l1 = off(a, b), l2 = off(b, c);
       const det = l1.dx * l2.dy - l1.dy * l2.dx;
@@ -317,7 +340,9 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
       if (len > limLen && len > 1e-9) { qx = b[0] + vx / len * limLen; qy = b[1] + vy / len * limLen; }
       inset2.push([qx, qy]);
     }
-    const inset3 = inset2.map(q => new V3().add(ctr).addScaledVector(t1, q[0]).addScaledVector(t2, q[1]));
+    const inset3 = CH === 0
+      ? f.map(vi => new V3(...verts[vi]))                    // none: exact shared corners, no cracks
+      : inset2.map(q => new V3().add(ctr).addScaledVector(t1, q[0]).addScaledVector(t2, q[1]));
     return { fi, verts: f, n, ctr, uvOf, inset3 };
   });
 
@@ -345,12 +370,13 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
     for (const i of [a, b, c]) nAcc[i].add(nn);
   };
 
-  // 1) flat faces: fan of the inset ring, original plane
-  for (const fd of faceData)
-    for (let k = 1; k < fd.verts.length - 1; k++)
-      addTri(idOf(fd.fi, fd.verts[0]), idOf(fd.fi, fd.verts[k]), idOf(fd.fi, fd.verts[k + 1]), undefined, true);
-
-  // 2) edge bevel strips: quad across each original edge, both faces' rings
+  // ---- edge bevel strips ----
+  //    none: skipped; chamfer: one quad per original edge; round: K×K grid of fillet
+  //    quads along a quadratic-bezier arc tangent to both faces (control on the original
+  //    edge). The t=0/t=1 grid rows lie on each face's inset ring and are REUSED as the
+  //    ring subdivision for that face's fan, so faces and fillets share vertices and the
+  //    surface stays watertight. The s=0/s=1 grid columns are arc polylines shared with
+  //    the rounded corner caps.
   const edgeMap = new Map();
   const ekey = (a, b) => a < b ? a + '_' + b : b + '_' + a;
   for (const fd of faceData) {
@@ -362,45 +388,189 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
       edgeMap.get(key).push({ fi: fd.fi, a, b });
     }
   }
+  const smoothN = new Map();                 // vertex id -> per-vertex smooth normal (round mode)
+  const addRoundVert = (p, n, u, v) => {
+    const id = pos.length / 3;
+    pos.push(p.x, p.y, p.z); uvs.push(u, v); nAcc.push(new V3());
+    smoothN.set(id, n.clone());
+    return id;
+  };
+  const ROUND_K = 5;
+  const faceRing = new Map();                // fi -> Map(ekey -> ids along that face's ring, in ring order)
+  const edgeEndRow = new Map();              // ekey@vertex -> arc polyline ids across the fillet, from one face's corner to the other's
   for (const [, sides] of edgeMap) {
     if (sides.length !== 2) continue;
     const [A0, B0] = sides;
-    let A = A0, B = B0;
     // pair corners by ORIGINAL vertex id so the quad is never twisted
-    const ia = idOf(A.fi, A.a), ib = idOf(A.fi, A.b),
-          ja = idOf(B.fi, A.a), jb = idOf(B.fi, A.b);
+    const ia = idOf(A0.fi, A0.a), ib = idOf(A0.fi, A0.b),
+          ja = idOf(B0.fi, A0.a), jb = idOf(B0.fi, A0.b);
     const mid = new V3().addVectors(P(ia), P(jb)).multiplyScalar(0.5).normalize();
     // addTri's winding flip would rewire the quad diagonal, so orient first
-    if (triNormal(P(ia), P(ib), P(jb)).dot(mid) < 0) {
-      const q = A; A = B; B = q;
-      idx.push(ia, jb, ib, ia, ja, jb); kind.push(0,0,0);
+    let flipped = false;
+    if (triNormal(P(ia), P(ib), P(jb)).dot(mid) < 0) flipped = true;
+    if (mode === 0) continue;
+    if (mode === 1) {
+      // kind must have EXACTLY one entry per triangle — a third 0 here used to be
+      // masked by faces-first ordering but shifts every later face's kind once
+      // strips are emitted first, collapsing face UVs to blank padding (no pips)
+      if (flipped) {
+        idx.push(ia, jb, ib, ia, ja, jb); kind.push(0,0);
+      } else {
+        idx.push(ia, ib, jb, ia, jb, ja); kind.push(0,0);
+      }
+      for (const t3 of (flipped ? [[ia,jb,ib],[ia,ja,jb]] : [[ia,ib,jb],[ia,jb,ja]])) {
+        const nn = triNormal(P(t3[0]), P(t3[1]), P(t3[2]));
+        for (const i of t3) nAcc[i].add(nn);
+      }
     } else {
-      idx.push(ia, ib, jb, ia, jb, ja); kind.push(0,0,0);
-    }
-    for (const t3 of [[ia,ib,jb],[ia,jb,ja]]) {
-      const nn = triNormal(P(t3[0]), P(t3[1]), P(t3[2]));
-      for (const i of t3) nAcc[i].add(nn);
+      // fillet grid: quadratic bezier from face A's inset ring to face B's inset ring
+      // with the control on the ORIGINAL edge — tangent to both faces, touching the
+      // sharp edge at the s-midpoints; normals rotate from n1 to n2 across t
+      const fdA = faceData[A0.fi], fdB = faceData[B0.fi];
+      const n1 = fdA.n, n2 = fdB.n;
+      const oA = new V3(...verts[A0.a]), oB = new V3(...verts[A0.b]);
+      const pA0 = P(ia), pA1 = P(ib), pB0 = P(ja), pB1 = P(jb);
+      const nAt = t => new V3().copy(n1).multiplyScalar(1 - t).addScaledVector(n2, t).normalize();
+      const bez = (s, t) => {
+        const w = 1 - t;
+        const a = new V3().lerpVectors(pA0, pA1, s);   // face A ring point
+        const b = new V3().lerpVectors(pB0, pB1, s);   // face B ring point
+        const c = new V3().lerpVectors(oA, oB, s);     // original edge point (control)
+        return a.multiplyScalar(w * w).addScaledVector(c, 2 * t * w).addScaledVector(b, t * t);
+      };
+      const rows = [];
+      for (let k = 0; k <= ROUND_K; k++) {
+        const t = k / ROUND_K, nrm = nAt(t), row = [];
+        for (let j = 0; j <= ROUND_K; j++) {
+          const s = j / ROUND_K, q = bez(s, t);
+          if (t === 0) {
+            row.push(j === 0 ? ia : j === ROUND_K ? ib
+              : addRoundVert(q, nrm, ...fdA.uvOf(q)));   // on face A's ring: face-mapped UV
+          } else if (t === 1) {
+            row.push(j === 0 ? ja : j === ROUND_K ? jb
+              : addRoundVert(q, nrm, ...fdB.uvOf(q)));   // on face B's ring: face-mapped UV
+          } else {
+            // interior: UV collapses to the padding between the two atlas cells
+            const u1 = uvs[ia * 2], v1 = uvs[ia * 2 + 1], u2 = uvs[jb * 2], v2 = uvs[jb * 2 + 1];
+            row.push(addRoundVert(q, nrm,
+              Math.round((u1 + u2) / 2 * cols) / cols,
+              Math.round((v1 + v2) / 2 * rows0) / rows0));
+          }
+        }
+        rows.push(row);
+      }
+      for (let j = 0; j < ROUND_K; j++) for (let k = 0; k < ROUND_K; k++) {
+        const q00 = rows[k][j], q10 = rows[k][j + 1], q11 = rows[k + 1][j + 1], q01 = rows[k + 1][j];
+        if (flipped) { idx.push(q00, q11, q10, q00, q01, q11); kind.push(2,2,2,2,2,2); }
+        else { idx.push(q00, q10, q11, q00, q11, q01); kind.push(2,2,2,2,2,2); }
+      }
+      // faces reuse the t=0 / t=1 rows as subdivided ring segments (in each face's own ring order)
+      if (!faceRing.has(A0.fi)) faceRing.set(A0.fi, new Map());
+      if (!faceRing.has(B0.fi)) faceRing.set(B0.fi, new Map());
+      faceRing.get(A0.fi).set(ekey(A0.a, A0.b), rows[0]);
+      faceRing.get(B0.fi).set(ekey(A0.a, A0.b),
+        B0.a === A0.a ? rows[ROUND_K] : rows[ROUND_K].slice().reverse());
+      // arc polylines at the two ends, for the rounded corner caps
+      edgeEndRow.set(ekey(A0.a, A0.b) + '@' + A0.a, rows.map(r => r[0]));
+      edgeEndRow.set(ekey(A0.a, A0.b) + '@' + A0.b, rows.map(r => r[ROUND_K]));
     }
   }
 
-  // 3) corner caps: connect consecutive faces' ring corners around each vertex
+  // ---- flat faces: fan over the inset ring ----
+  //    round mode: the ring is subdivided with the fillet rows' ring points so the
+  //    fan shares edges with the fillet grids (watertight, no T-junctions)
+  for (const fd of faceData) {
+    const fr = faceRing.get(fd.fi);
+    const ring = [];
+    const v = fd.verts, m = v.length;
+    for (let k = 0; k < m; k++) {
+      const a = v[k], b = v[(k + 1) % m];
+      const seg = fr && fr.get(ekey(a, b));
+      if (seg) { for (let j = 0; j < seg.length - 1; j++) ring.push(seg[j]); }
+      else ring.push(idOf(fd.fi, a));
+    }
+    if (!fr) {
+      // chamfer/none: corner fan (ring has no collinear points)
+      for (let k = 1; k < ring.length - 1; k++)
+        addTri(ring[0], ring[k], ring[k + 1], undefined, true);
+    } else {
+      // round: fan from an interior centre — a corner fan would make degenerate
+      // slivers along the edges (subdivision points are collinear with the corner)
+      const cx = ring.reduce((s, id) => s + pos[id * 3], 0) / ring.length;
+      const cy = ring.reduce((s, id) => s + pos[id * 3 + 1], 0) / ring.length;
+      const cz = ring.reduce((s, id) => s + pos[id * 3 + 2], 0) / ring.length;
+      const cuv = fd.uvOf(new V3(cx, cy, cz));
+      const cid = addRoundVert(new V3(cx, cy, cz), fd.n, cuv[0], cuv[1]);
+      for (let k = 0; k < ring.length; k++) {
+        let a = ring[k], b = ring[(k + 1) % ring.length];
+        if (triNormal(P(cid), P(a), P(b)).dot(fd.n) < 0) { const t3 = a; a = b; b = t3; }
+        idx.push(cid, a, b); kind.push(1, 1, 1);
+        const nn = triNormal(P(cid), P(a), P(b));
+        for (const i of [cid, a, b]) nAcc[i].add(nn);
+      }
+    }
+  }
+
+  // ---- corner caps: connect consecutive faces' ring corners around each vertex ----
+  //    round mode: apex bulges out to the ORIGINAL vertex; the polygon boundary is the
+  //    fillet arcs' end polylines, so the cap meets every fillet grid edge-to-edge
   const vertFaces = Array.from({ length: verts.length }, () => []);
   faceData.forEach(fd => fd.verts.forEach(v => vertFaces[v].push(fd)));
   for (let vi = 0; vi < verts.length; vi++) {
     const fds = vertFaces[vi];
     if (fds.length < 3) continue;
     const axis = new V3(...verts[vi]).normalize();
+    if (mode === 0) continue;
     const ref = Math.abs(axis.y) < 0.9 ? new V3(0, 1, 0) : new V3(1, 0, 0);
     const t1 = new V3().crossVectors(ref, axis).normalize();
     const t2 = new V3().crossVectors(axis, t1);
     const pts = fds.map(fd => {
       const p = fd.inset3[fd.verts.indexOf(vi)], d = new V3().subVectors(p, new V3(...verts[vi]));
-      return { id: idOf(fd.fi, vi), ang: Math.atan2(d.dot(t2), d.dot(t1)) };
+      return { fd, id: idOf(fd.fi, vi), ang: Math.atan2(d.dot(t2), d.dot(t1)) };
     });
     pts.sort((x, y) => x.ang - y.ang);
-    const ids = pts.map(pt => pt.id);
-    for (let k = 1; k < ids.length - 1; k++)
-      addTri(ids[0], ids[k], ids[k + 1], axis);
+    if (mode !== 2) {
+      const ids = pts.map(pt => pt.id);
+      for (let k = 1; k < ids.length - 1; k++)
+        addTri(ids[0], ids[k], ids[k + 1], axis);
+    } else {
+      // polygon: face corner -> arc polyline -> next face corner -> ... around vi
+      // NOTE: the apex must sit INSIDE the arc boundary — the original vertex is the
+      // sharpest point of the un-chamfered solid, so fanning to it leaves a sharp tip
+      const poly = [];
+      for (let k = 0; k < pts.length; k++) {
+        const f1 = pts[k].fd, f2 = pts[(k + 1) % pts.length].fd;
+        poly.push(pts[k].id);
+        // find the shared edge between f1 and f2, take its end row at vi
+        let row = null;
+        for (const va of f1.verts) {
+          if (va === vi) continue;
+          if (f2.verts.includes(va) && edgeEndRow.has(ekey(vi, va) + '@' + vi)) { row = edgeEndRow.get(ekey(vi, va) + '@' + vi); break; }
+        }
+        if (row) {
+          const mine = idOf(f1.fi, vi);
+          const seq = (row[0] === mine) ? row : row.slice().reverse();
+          for (let j = 1; j < seq.length - 1; j++) poly.push(seq[j]);
+        }
+      }
+      // the cyclic fan closes the polygon back to poly[0] — no duplicate corner needed
+      if (poly.length < 3) continue;
+      const avgU = poly.reduce((s, id) => s + uvs[id * 2], 0) / poly.length;
+      const avgV = poly.reduce((s, id) => s + uvs[id * 2 + 1], 0) / poly.length;
+      // apex: the original vertex is the sharpest point of the un-chamfered solid,
+      // so fanning to it leaves a sharp tip. Anchor the apex to the fillet arcs'
+      // reach instead: the boundary's max projection onto the corner axis. The dome
+      // then peaks level with the edge fillets on every die shape.
+      const maxProj = Math.max(...poly.map(id => P(id).dot(axis)));
+      const apexP = axis.clone().multiplyScalar(maxProj);
+      const apex = addRoundVert(apexP, axis,
+        Math.round(avgU * cols) / cols, Math.round(avgV * rows0) / rows0);
+      for (let k = 0; k < poly.length; k++) {
+        let a = poly[k], b = poly[(k + 1) % poly.length];
+        if (triNormal(P(apex), P(a), P(b)).dot(axis) < 0) { const t3 = a; a = b; b = t3; }
+        idx.push(apex, a, b); kind.push(2, 2, 2);
+      }
+    }
   }
 
   // flat shading: expand to non-indexed with per-triangle normals so faces stay
@@ -416,6 +586,14 @@ function chamferGeometry(verts, faces, cols, pad = 0.055) {
         fp.push(pos[vi*3], pos[vi*3+1], pos[vi*3+2]);
         fu.push(uvs[vi*2], uvs[vi*2+1]);
         fn.push(nn.x, nn.y, nn.z);
+      }
+    } else if (kind[i/3] === 2) {
+      // round strip/cap: smooth per-vertex normals from the fillet
+      for (const vi of [idx[i], idx[i+1], idx[i+2]]) {
+        const n = smoothN.get(vi) || nn;
+        fp.push(pos[vi*3], pos[vi*3+1], pos[vi*3+2]);
+        fu.push(uvs[vi*2], uvs[vi*2+1]);
+        fn.push(n.x, n.y, n.z);
       }
     } else {
       // bevel/cap: sample the blank padding between atlas cells — collapse all
@@ -569,29 +747,77 @@ function d10Data(scale) {
   return { verts, faces, values };
 }
 
-/* ---------------- per-type build ---------------- */
-function buildType(sides) {
-  const scale = { 4:0.7, 6:0.9, 8:1.122, 10:1.21, 12:1.1, 20:1.3728, 100:1.0 }[sides];
-  if (sides === 100) {
-    const cv = document.createElement('canvas'); cv.width = cv.height = 512;
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#f5efdd'; ctx.fillRect(0, 0, 512, 512);
-    ctx.strokeStyle = 'rgba(90,60,30,.45)'; ctx.lineWidth = 6;
-    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(256, 256, 34 + i * 48, 0, Math.PI * 2); ctx.stroke(); }
-    ctx.fillStyle = '#a01c22';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (const [x, y, r, s] of [[256,140,0,64],[110,320,0.55,56],[400,330,-0.5,56],[256,440,-0.3,50]]) {
-      ctx.save(); ctx.translate(x, y); ctx.rotate(r);
-      ctx.font = `700 ${s}px Georgia, serif`;
-      ctx.fillText('100', 0, 0);
-      ctx.restore();
-    }
-    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-    const geo = new THREE.SphereGeometry(0.52 * scale, 48, 32);
-    return { geo, tex, sphere:true, size:0.52 * scale };
+// real 100-sided die: convex polyhedron built as the intersection of 100 tangent
+// planes placed at Fibonacci-sphere points (Zocchihedron-style construction).
+// Vertices come from triple-plane intersections of mutually adjacent faces only,
+// which keeps the search tiny and guarantees a valid closed hull.
+function d100Data(scale) {
+  const R = 0.52 * scale;
+  const N = 100, GA = Math.PI * (3 - Math.sqrt(5));
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    const y = 1 - (i + 0.5) * 2 / N;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const th = GA * i;
+    pts.push([r * Math.cos(th), y, r * Math.sin(th)]);
   }
+  const dot3 = (a, p) => a[0] * p[0] + a[1] * p[1] + a[2] * p[2];
+  const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const knn = pts.map((p, i) => pts
+    .map((q, j) => [j, (p[0]-q[0])**2 + (p[1]-q[1])**2 + (p[2]-q[2])**2])
+    .sort((a, b) => a[1] - b[1]).slice(1, 8).map(d => d[0]));
+  const isNb = (a, b) => knn[a].includes(b);
+  const verts = [];
+  const vmap = new Map();
+  const addVert = (v) => {
+    const k = v.map(n => n.toFixed(4)).join(',');
+    if (!vmap.has(k)) { vmap.set(k, verts.length); verts.push(v); }
+    return vmap.get(k);
+  };
+  for (let i = 0; i < N; i++) {
+    const nb = knn[i];
+    for (let ai = 0; ai < nb.length; ai++) for (let bi = ai + 1; bi < nb.length; bi++) {
+      const a = nb[ai], b = nb[bi];
+      if (!isNb(a, b)) continue;
+      const n1 = pts[i], n2 = pts[a], n3 = pts[b];
+      const bxc = cross3(n2, n3), cxa = cross3(n3, n1), axb = cross3(n1, n2);
+      const den = dot3(n1, bxc);
+      if (Math.abs(den) < 1e-8) continue;
+      const v = [
+        R * (bxc[0] + cxa[0] + axb[0]) / den,
+        R * (bxc[1] + cxa[1] + axb[1]) / den,
+        R * (bxc[2] + cxa[2] + axb[2]) / den
+      ];
+      let ok = true;
+      for (let j = 0; j < N; j++) if (dot3(pts[j], v) > R + 1e-5) { ok = false; break; }
+      if (ok) addVert(v);
+    }
+  }
+  const faces = pts.map((n, i) => {
+    const idx = verts
+      .map((v, vi) => [vi, Math.abs(dot3(n, v) - R)])
+      .filter(d => d[1] < 1e-4)
+      .map(d => d[0]);
+    if (idx.length < 3) return null;
+    // order the polygon CCW seen from outside
+    const ref = Math.abs(n[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const t1 = cross3(ref, n);
+    const tl = Math.hypot(t1[0], t1[1], t1[2]); t1[0] /= tl; t1[1] /= tl; t1[2] /= tl;
+    const t2 = cross3(n, t1);
+    idx.sort((a, b) => Math.atan2(dot3(t2, verts[a]), dot3(t1, verts[a])) - Math.atan2(dot3(t2, verts[b]), dot3(t1, verts[b])));
+    return idx;
+  }).filter(Boolean);
+  const values = Array.from({ length: faces.length }, (_, i) => i + 1);
+  return { verts, faces, values, size:R };
+}
+
+/* ---------------- per-type build ---------------- */
+function buildType(sides, mul) {
+  mul = mul || 1;
+  const scale = { 4:0.7, 6:0.9, 8:1.122, 10:1.21, 12:1.1, 20:1.3728, 100:2.0 }[sides] * mul;
   let data, atlasCols;
-  if (sides === 4) { data = d4Data(scale); atlasCols = 2; }
+  if (sides === 100) { data = d100Data(scale); atlasCols = 10; }
+  else if (sides === 4) { data = d4Data(scale); atlasCols = 2; }
   else if (sides === 8) { data = d8Data(scale); atlasCols = 2; }
   else if (sides === 10) { data = d10Data(scale); atlasCols = 2; }
   else if (sides === 12) { data = d12Data(scale); atlasCols = 3; }
@@ -604,15 +830,18 @@ function buildType(sides) {
     const faces = [
       [1,2,6,5], [0,4,7,3], [3,7,6,2], [0,1,5,4], [4,5,6,7], [0,3,2,1]
     ];
-    const geo = chamferGeometry(verts, faces, 3);
+    const geo = chamferGeometry(verts, faces, 3, edgeMode);
     const normals = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-    return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 * scale };
+    return { geo, tex, values, faceNormalsArr:normals.map(n => new THREE.Vector3(...n)), size:0.55 * scale, rad:s * Math.sqrt(3), verts, faces };
   }
-  const fontScale = sides === 10 ? 0.85 : 1; // d10 glyphs 15% smaller (die got bigger, keep numbers proportionate)
+  const fontScale = sides === 100 ? 0.72 : sides === 10 ? 0.85 : 1; // d100/d10 glyphs smaller to fit 2-3 digit values
   const { tex } = makeAtlas(sides === 4 ? data.values.map(() => null) : data.values, atlasCols, fontScale);
-  const geo = chamferGeometry(data.verts, data.faces, atlasCols);
+  const geo = chamferGeometry(data.verts, data.faces, atlasCols, edgeMode);
   const normals = faceNormals(data.verts, data.faces);
   const out = { geo, tex, values:data.values, faceNormalsArr:normals, verts:data.verts, faces:data.faces };
+  // true circumradius (max |v|): physics spawn sizing — distinct from size, which
+  // only feeds the result floater sprite
+  out.rad = Math.max(...data.verts.map(v => Math.hypot(v[0], v[1], v[2])));
   if (sides === 4) {
     out.downFacing = true;
     // vertex label decals
@@ -654,7 +883,7 @@ scene.background = new THREE.Color(0x0d1117);
 scene.fog = new THREE.Fog(0x0d1117, 30, 60);
 
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
-camera.position.set(0, 8.2, 15.2);
+camera.position.set(0, 8.6, 16.6);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.4, 0);
 controls.enableDamping = true;
@@ -662,15 +891,20 @@ controls.dampingFactor = 0.08;
 controls.minDistance = 5; controls.maxDistance = 30;
 controls.maxPolarAngle = 1.45;
 
-scene.add(new THREE.HemisphereLight(0x8899bb, 0x223028, 0.55));
+scene.add(new THREE.HemisphereLight(0x8899bb, 0x223028, 0.85));
 const dir = new THREE.DirectionalLight(0xfff2dd, 1.35);
-dir.position.set(6, 12, 5);
+// nearly straight overhead: wall contact shadows stay thin bands pressed against
+// the wall base instead of smearing across the felt, and all inner faces catch light
+dir.position.set(1.2, 22, 0.8);
 dir.castShadow = true;
 dir.shadow.mapSize.set(2048, 2048);
-dir.shadow.camera.left = -16; dir.shadow.camera.right = 16;
-dir.shadow.camera.top = 16; dir.shadow.camera.bottom = -16;
+dir.shadow.normalBias = 0.005;  // tiny: avoid acne without detaching the shadow
+// frustum must cover the whole tray — corners sit ~17.7 from center, so a ±16
+// frustum clips the shadow map mid-wall and leaves a diagonal cut on the felt
+dir.shadow.camera.left = -22; dir.shadow.camera.right = 22;
+dir.shadow.camera.top = 22; dir.shadow.camera.bottom = -22;
 scene.add(dir);
-const fill = new THREE.DirectionalLight(0xa8c4ff, 0.35);
+const fill = new THREE.DirectionalLight(0xa8c4ff, 0.6);
 fill.position.set(-8, 5, -6);
 scene.add(fill);
 
@@ -698,25 +932,38 @@ floorMesh.receiveShadow = true;
 scene.add(floorMesh);
 
 
-// walls
+// walls: ONE extruded rectangular ring — no chamfer, no corner seams. The ring's
+// outer faces are continuous planes and the four walls meet seamlessly at the
+// corners, so the tray reads as a solid open-topped box from any angle.
+// Physics wall planes below stay aligned to the ring's inner faces.
 const wallMat = new THREE.MeshStandardMaterial({ color:0x3c2a1c, roughness:0.85 });
-function addWall(w, h, d, x, y, z, rotX = 0) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
-  m.position.set(x, y, z);
-  m.rotation.x = rotX;
-  m.castShadow = true; m.receiveShadow = true;
-  scene.add(m);
-  return m;
-}
 const WALL_X = 11.5, BACK_Z = -13, FRONT_Z = 13.5;
-const wallH = 2.4, wallThk = 0.9;
-addWall(TABLE_W + 2*wallThk, wallH, wallThk, 0, wallH/2, BACK_Z);
-addWall(wallThk, wallH, TABLE_L + 2*wallThk, -WALL_X, wallH/2, 0);
-addWall(wallThk, wallH, TABLE_L + 2*wallThk, WALL_X, wallH/2, 0);
-addWall(TABLE_W + 2*wallThk, wallH, wallThk, 0, wallH/2, FRONT_Z);
+const wallH = 2.4, wallThk = 0.9, wallBase = -0.4;
+// shape is built in (x, y) with world z = -shapeY; extrusion (+z) becomes world +y
+const ring = new THREE.Shape();
+ring.moveTo(-WALL_X - wallThk/2, BACK_Z - wallThk/2);   // outer rect corners
+ring.lineTo(WALL_X + wallThk/2, BACK_Z - wallThk/2);
+ring.lineTo(WALL_X + wallThk/2, FRONT_Z + wallThk/2);
+ring.lineTo(-WALL_X - wallThk/2, FRONT_Z + wallThk/2);
+ring.closePath();
+const hole = new THREE.Path();
+hole.moveTo(-WALL_X, BACK_Z + wallThk/2);               // inner rect corners
+hole.lineTo(WALL_X, BACK_Z + wallThk/2);
+hole.lineTo(WALL_X, FRONT_Z - wallThk/2);
+hole.lineTo(-WALL_X, FRONT_Z - wallThk/2);
+hole.closePath();
+ring.holes.push(hole);
+const wallGeo = new THREE.ExtrudeGeometry(ring, { depth: wallH - wallBase, bevelEnabled:false, steps:1 });
+const wallMesh = new THREE.Mesh(wallGeo, wallMat);
+wallMesh.rotation.x = -Math.PI/2;   // shape y -> world -z, extrude z -> world +y
+wallMesh.position.y = wallBase;
+wallMesh.castShadow = true; wallMesh.receiveShadow = true;
+scene.add(wallMesh);
 
 /* ---------------- physics ---------------- */
 const world = new CANNON.World({ gravity:new CANNON.Vec3(0, -24, 0) });
+// gravity slider (1x-5x) scales world.gravity directly; the weight gBoost force hack
+// reads world.gravity each step, so both scale together and 1x stays the old default
 world.broadphase = new CANNON.SAPBroadphase(world);
 world.allowSleep = true;
 world.solver.iterations = 30;   // firmer non-penetration between dice
@@ -737,14 +984,14 @@ world.addContactMaterial(dieGroundCM); world.addContactMaterial(dieWallCM); worl
 // contact materials + damping on every roll AND apply a per-die gravity boost:
 // heavy dice fall noticeably harder, light dice float a little.
 function applyWeightTuning(w) {
-  const bounce = Math.pow(w, -1.1);    // 0.25x → 4.9 (super bouncy), 4x → 0.22 (stone dead)
+  const bounce = Math.pow(w, -1.1);    // 0.25x → 4.9 (super bouncy), 5x → 0.17 (stone dead)
   const drag   = Math.pow(w, -0.30);   // heavy dice carry momentum, light dice bleed speed (light end no longer reachable: slider starts at 1x)
   dieGroundCM.restitution = 0.2 * bounce;
   dieWallCM.restitution   = 0.5 * bounce;
   dieDieCM.restitution    = 0.45 * bounce;
   // extra downward acceleration (times gravity) beyond the world's -24: 1x → 0,
-  // 4x → ~1.9× extra (falls ~2.4× faster). Capped lower than w^1.2 so heavy dice
-  // don't hit so hard they bounce clear over the walls.
+  // 5x → ~2.6× extra (falls noticeably faster). Capped lower than w^1.2 so heavy
+  // dice don't hit so hard they visually clear the wall tops on the rebound.
   const gBoost = Math.pow(w, 0.7) - 1;  // 4x → ~1.9× extra
   return { bounce, drag, gBoost };
 }
@@ -771,22 +1018,25 @@ wallPlane(0, -1, 0, FRONT_Z - wallThk/2);
 
 /* ---------------- dice ---------------- */
 const typeCache = {};
-function getType(sides) {
-  if (!typeCache[sides]) typeCache[sides] = buildType(sides);
-  return typeCache[sides];
+function getType(sides, mul) {
+  mul = mul || 1;
+  const key = sides + '_' + edgeMode + '_' + mul.toFixed(2);   // rebuild geometry when edge style or size changes
+  if (!typeCache[key]) typeCache[key] = buildType(sides, mul);
+  return typeCache[key];
 }
 const activeDice = [];
 const floaters = [];
 
 function makeCannonShape(sides, info) {
   if (info.sphere) return new CANNON.Sphere(info.size);
-  if (sides === 6) return new CANNON.Box(new CANNON.Vec3(0.5*0.9, 0.5*0.9, 0.5*0.9));
+  if (sides === 6) return new CANNON.Box(new CANNON.Vec3(Math.abs(info.verts[0][0]), Math.abs(info.verts[0][1]), Math.abs(info.verts[0][2])));
   return new CANNON.ConvexPolyhedron({
     vertices: info.verts.map(v => new CANNON.Vec3(...v)),
     faces: outwardFaces(info.verts, info.faces)
   });
 }
-function makeDieMesh(sides, info) {
+function makeDieMesh(sides, info, mul) {
+  mul = mul || 1;
   const mat = new THREE.MeshStandardMaterial({ map:info.tex, roughness:0.42, metalness:0.03 });
   const mesh = new THREE.Mesh(info.geo, mat);
   mesh.castShadow = true; mesh.receiveShadow = true;
@@ -805,7 +1055,7 @@ function makeDieMesh(sides, info) {
           map:new THREE.CanvasTexture(cv), transparent:true, polygonOffset:true, polygonOffsetFactor:-2
         });
       }
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), decalMats[d.value]);
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(0.55 * mul, 0.55 * mul), decalMats[d.value]);
       p.position.copy(d.pos); p.quaternion.copy(d.quat);
       mesh.add(p);
     }
@@ -815,12 +1065,20 @@ function makeDieMesh(sides, info) {
 
 /* audio */
 let audioCtx = null;
-function ensureAudio() { if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } }
+function ensureAudio() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+  // autoplay policy: a context created without a user gesture starts suspended;
+  // resume inside any gesture so the very first roll is audible
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+}
 addEventListener('pointerdown', ensureAudio, { once:false });
 addEventListener('keydown', ensureAudio, { once:false });
+addEventListener('touchstart', ensureAudio, { once:false, passive:true });
+window.__audioState = () => audioCtx ? { state: audioCtx.state, time: audioCtx.currentTime } : null;
 let lastSound = 0;
 function clack(impact) {
   if (!audioCtx || impact < 1.2) return;
+  if (audioCtx.state === 'suspended') { audioCtx.resume().catch(() => {}); return; }
   const now = performance.now();
   if (now - lastSound < 55) return;
   lastSound = now;
@@ -829,7 +1087,7 @@ function clack(impact) {
   o.type = 'triangle';
   o.frequency.setValueAtTime(140 + Math.random() * 160, t);
   o.frequency.exponentialRampToValueAtTime(70, t + 0.07);
-  const vol = Math.min(0.3, 0.05 + impact * 0.022);
+  const vol = Math.min(0.45, (0.05 + impact * 0.022) * 1.5);  // 50% louder
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
   o.connect(g).connect(audioCtx.destination);
@@ -837,8 +1095,9 @@ function clack(impact) {
 }
 
 /* ---------------- game state & UI ---------------- */
-let dieType = 6, count = 2, weight = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
-window.__dbg = () => ({ weight, rolling, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice });
+let dieType = 6, count = 2, edgeMode = 2, weight = 1.0, gravityMul = 1.0, momentumMul = 1.0, sizeMul = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
+const EDGE_NAMES = ['None', 'Chamfer', 'Round'];
+window.__dbg = () => ({ weight, edgeMode, sizeMul, rolling, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice, floaters: floaters.length });
 let history = [];
 try { history = JSON.parse(localStorage.getItem('diceHistory') || '[]'); } catch (e) { history = []; }
 
@@ -846,6 +1105,14 @@ const $types = document.getElementById('types');
 const $count = document.getElementById('count');
 const $weight = document.getElementById('weight');
 const $weightVal = document.getElementById('weightVal');
+const $gravity = document.getElementById('gravity');
+const $gravityVal = document.getElementById('gravityVal');
+const $momentum = document.getElementById('momentum');
+const $momentumVal = document.getElementById('momentumVal');
+const $size = document.getElementById('size');
+const $sizeVal = document.getElementById('sizeVal');
+const $edges = document.getElementById('edges');
+const $edgesVal = document.getElementById('edgesVal');
 const $countRow = document.getElementById('countRow');
 const $roll = document.getElementById('roll');
 const $last = document.getElementById('last');
@@ -863,8 +1130,23 @@ for (const s of [4, 6, 8, 10, 12, 20, 100]) {
 document.getElementById('minus').onclick = () => { count = Math.max(1, count - 1); syncUI(); };
 document.getElementById('plus').onclick = () => { count = Math.min(10, count + 1); syncUI(); };
 document.getElementById('weight').oninput = (e) => { weight = e.target.value / 100; syncUI(); saveHistory(); };
+document.getElementById('gravity').oninput = (e) => { gravityMul = e.target.value / 100; world.gravity.set(0, -24 * gravityMul, 0); syncUI(); };
+document.getElementById('momentum').oninput = (e) => { momentumMul = e.target.value / 100; syncUI(); };
+document.getElementById('size').oninput = (e) => { sizeMul = e.target.value / 100; syncUI(); };
+document.getElementById('edges').oninput = (e) => {
+  edgeMode = +e.target.value;
+  syncUI();
+  // rebuild geometry of dice already on the table so the change is visible immediately
+  for (const d of activeDice) {
+    const info = getType(d.sides, d.sizeMul);
+    d.info = info;
+    d.mesh.geometry.dispose();
+    d.mesh.geometry = info.geo;
+  }
+};
 // clamp weight (older saved sessions may have sub-1x values; slider now starts at 1x)
 weight = Math.max(1, weight);
+world.gravity.set(0, -24 * gravityMul, 0);
 document.getElementById('clear').onclick = () => { history = []; saveHistory(); renderHistory(); };
 $roll.onclick = roll;
 addEventListener('keydown', e => {
@@ -876,6 +1158,14 @@ function syncUI() {
   $count.textContent = count;
   $weightVal.textContent = weight.toFixed(2).replace(/\.?0+$/, '') + '×';
   $weight.value = Math.round(weight * 100);
+  $gravityVal.textContent = gravityMul.toFixed(2).replace(/\.?0+$/, '') + '×';
+  $gravity.value = Math.round(gravityMul * 100);
+  $momentumVal.textContent = momentumMul.toFixed(2).replace(/\.?0+$/, '') + '×';
+  $momentum.value = Math.round(momentumMul * 100);
+  $sizeVal.textContent = sizeMul.toFixed(2).replace(/\.?0+$/, '') + '×';
+  $size.value = Math.round(sizeMul * 100);
+  $edgesVal.textContent = EDGE_NAMES[edgeMode];
+  $edges.value = edgeMode;
   $countRow.classList.toggle('disabled', dieType === 100);
   $roll.textContent = rolling ? 'ROLLING\u2026' : `ROLL ${count}d${dieType === 100 ? '100' : dieType}`;
 }
@@ -927,24 +1217,48 @@ function roll() {
   for (const f of floaters) scene.remove(f.sprite);
   floaters.length = 0;
 
-  const info = getType(dieType);
+  const info = getType(dieType, sizeMul);
   const n = count;
   const tuning = applyWeightTuning(weight);
   currentGBoost = tuning.gBoost;
-  const isBall = dieType === 100;
   for (let i = 0; i < n; i++) {
-    const mesh = makeDieMesh(dieType, info);
+    const mesh = makeDieMesh(dieType, info, sizeMul);
     const body = new CANNON.Body({
       mass:0.3 * weight,
       shape:makeCannonShape(dieType, info),
       material:dieMat,
-      linearDamping:(isBall ? 0.6 : 0.28) * Math.pow(weight, -0.15),
-      angularDamping:(isBall ? 0.8 : 0.4) * Math.pow(weight, -0.10),
+      linearDamping:0.28 * Math.pow(weight, -0.15),
+      angularDamping:0.4 * Math.pow(weight, -0.10),
       sleepSpeedLimit:0.4, sleepTimeLimit:0.35, allowSleep:true
     });
-    const spread = Math.min(5.6, (i - (n - 1) / 2) * 1.25);
-    body.position.set(spread + (Math.random() - 0.5) * 0.25, 7.4 + Math.random() * 0.8, 4.7 + (i % 2) * 1.6);
-    body.velocity.set((Math.random() - 0.5) * 7, -2 - Math.random(), -(11 + Math.random() * 4));
+    // size-aware spawn: normal-size dice keep the legacy layout; giant dice get a
+    // grid with ≥ ~diameter clearance in x/z/y so they never spawn overlapping
+    // (deep overlap makes the solver blast them apart at spawn)
+    const R = info.rad || info.size || 0.6;
+    let spread, z, y;
+    if (R <= 0.8) {
+      spread = Math.min(5.6, (i - (n - 1) / 2) * 1.25);
+      z = 6.2 + (i % 2) * 1.6;
+      y = 7.6 + Math.random() * 0.8;
+    } else {
+      const spacing = Math.max(1.25, 2.4 * R);
+      const maxX = WALL_X - 1.1 - R;
+      const perRow = Math.max(1, Math.min(n, Math.floor((2 * maxX) / spacing) + 1));
+      const zBack = BACK_Z + 1.2 + R, zFront = FRONT_Z - 1.2 - R;
+      const zPerLayer = Math.max(1, Math.floor((zFront - zBack) / spacing) + 1);
+      const layerCap = perRow * zPerLayer;
+      const layer = Math.floor(i / layerCap), idx = i % layerCap;
+      const col = idx % perRow, zrow = Math.floor(idx / perRow) % zPerLayer;
+      const cap = Math.min(layerCap, n - layer * layerCap);
+      const rowsThis = Math.ceil(cap / perRow);
+      const zMid = (zBack + zFront) / 2;
+      spread = Math.min(maxX, Math.max(-maxX, col * spacing - (Math.min(n, perRow) - 1) * spacing / 2));
+      z = zMid - (rowsThis - 1) * spacing / 2 + zrow * spacing;
+      y = Math.max(7.6 + Math.random() * 0.8, R + 1.2) + layer * spacing * 0.95;
+    }
+    body.position.set(spread + (Math.random() - 0.5) * 0.25, y, z);
+    // forward momentum: throw speed toward the back of the tray, scaled by the Momentum slider
+    body.velocity.set((Math.random() - 0.5) * 7, -2 - Math.random(), -(11 + Math.random() * 4) * momentumMul);
     body.angularVelocity.set((Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26);
     body.quaternion.setFromEuler(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2);
     // keep spawn orientation well mixed
@@ -959,20 +1273,15 @@ function roll() {
     scene.add(mesh);
     world.addBody(body);
     // value is decided by physics — nothing is drawn up front
-    activeDice.push({ mesh, body, info, sides:dieType, value:null, done:false, restFrames:0, nudges:0 });
+    activeDice.push({ mesh, body, info, sides:dieType, value:null, done:false, restFrames:0, nudges:0, sizeMul });
   }
 }
 // Read a die's value from its settled orientation. Returns null when the face
 // is not cleanly up (cocked die) unless bestOnly — then the closest face wins.
-// The d100 is a sphere: its resting orientation is uniformly random, so the
-// value is drawn from crypto at the moment it comes to rest.
+// value is decided by physics for every die type: which face points up when it
+// settles is the roll
 function readDie(d, bestOnly) {
   const info = d.info;
-  if (d.sides === 100) {
-    const a = new Uint32Array(1);
-    crypto.getRandomValues(a);
-    return 1 + (a[0] % 100);
-  }
   const q = d.body.quaternion;
   const up = new CANNON.Vec3(0, 1, 0);
   let best = -Infinity, bestIdx = 0;
@@ -992,6 +1301,87 @@ function nudgeDie(d) {
   d.body.velocity.set(Math.cos(a) * 1.3, 1.5 + Math.random() * 0.5, Math.sin(a) * 1.3);
   d.body.angularVelocity.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
   d.restFrames = 0;
+}
+// gentle topple: a die balanced on an edge gets a soft tap so it falls flat on
+// its own — reads as the die finishing its wobble, never as a correction
+function toppleNudge(d) {
+  const a = Math.random() * Math.PI * 2;
+  d.body.allowSleep = false;
+  d.body.wakeUp();
+  d.body.velocity.set(Math.cos(a) * 0.5, 0.25, Math.sin(a) * 0.5);
+  d.body.angularVelocity.set((Math.random() - 0.5) * 1.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 1.6);
+  d.restFrames = 0;
+}
+// best face-up dot for a die (1 = perfectly flat on a face)
+function flatDot(d) {
+  const q = d.body.quaternion, up = new CANNON.Vec3(0, 1, 0);
+  let best = -Infinity;
+  d.info.faceNormalsArr.forEach(nrm => {
+    const wn = q.vmult(new CANNON.Vec3(nrm.x, nrm.y, nrm.z));
+    const dot = d.info.downFacing ? -wn.dot(up) : wn.dot(up);
+    if (dot > best) best = dot;
+  });
+  return best;
+}
+// lowest hull vertex y and horizontal footprint for orientation q
+function hullShape(info, q) {
+  const Q = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+  const M = new THREE.Matrix4().makeRotationFromQuaternion(Q);
+  const v = new THREE.Vector3();
+  let lowY = Infinity, rX = 0, rZ = 0;
+  for (const w of info.verts) {
+    v.set(w[0], w[1], w[2]).applyMatrix4(M);
+    if (v.y < lowY) lowY = v.y;
+    rX = Math.max(rX, Math.abs(v.x)); rZ = Math.max(rZ, Math.abs(v.z));
+  }
+  return { lowY, rX, rZ };
+}
+// smooth, near-invisible settle: rotate the die flat around its closest face
+// (a die resting on an edge/vertex is impossible for a convex die — never freeze one)
+function snapFlat(d) {
+  const q = d.body.quaternion, up = new CANNON.Vec3(0, 1, 0);
+  let best = -Infinity, bi = 0;
+  d.info.faceNormalsArr.forEach((nrm, i) => {
+    const wn = q.vmult(new CANNON.Vec3(nrm.x, nrm.y, nrm.z));
+    const dot = d.info.downFacing ? -wn.dot(up) : wn.dot(up);
+    if (dot > best) { best = dot; bi = i; }
+  });
+  const wn = q.vmult(new CANNON.Vec3(d.info.faceNormalsArr[bi].x, d.info.faceNormalsArr[bi].y, d.info.faceNormalsArr[bi].z));
+  const nW = new THREE.Vector3(wn.x, wn.y, wn.z).normalize();
+  const tW = new THREE.Vector3(0, d.info.downFacing ? -1 : 1, 0);
+  const q0 = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+  const qTo = new THREE.Quaternion().setFromUnitVectors(nW, tW).multiply(q0).normalize();
+  const sh = hullShape(d.info, qTo);
+  const p = d.body.position;
+  const innerX = WALL_X - wallThk / 2, innerBack = BACK_Z + wallThk / 2, innerFront = FRONT_Z - wallThk / 2;
+  const pad = 0.05;
+  let tx = THREE.MathUtils.clamp(p.x, -(innerX - sh.rX - pad), innerX - sh.rX - pad);
+  let tz = THREE.MathUtils.clamp(p.z, innerBack + sh.rZ + pad, innerFront - sh.rZ - pad);
+  let ty = -sh.lowY;
+  // don't sink into other dice: resolve overlap by lifting or shoving aside
+  const shim = { info: d.info, body: { position: new CANNON.Vec3(tx, ty, tz), quaternion: qTo } };
+  for (let iter = 0; iter < 8; iter++) {
+    let any = false;
+    for (const o of activeDice) {
+      if (o === d) continue;
+      const ov = satOverlap(shim, o);
+      if (ov.depth <= 0.002 || !ov.dir) continue;
+      if (ov.dir.y > 0.25) ty += ov.depth * ov.dir.y;
+      else { tx += ov.depth * ov.dir.x; tz += ov.depth * ov.dir.z; }
+      shim.body.position.set(tx, ty, tz);
+      any = true;
+    }
+    if (!any) break;
+  }
+  tx = THREE.MathUtils.clamp(tx, -(innerX - sh.rX - pad), innerX - sh.rX - pad);
+  tz = THREE.MathUtils.clamp(tz, innerBack + sh.rZ + pad, innerFront - sh.rZ - pad);
+  d.body.quaternion.set(qTo.x, qTo.y, qTo.z, qTo.w);
+  d.body.position.set(tx, ty, tz);
+  d.value = readDie(d, true);
+  d.done = true;
+  d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
+  d.body.allowSleep = true; d.body.sleep();
+  d.snap = { q0, p0: new THREE.Vector3(p.x, p.y, p.z), q1: qTo.clone(), p1: new THREE.Vector3(tx, ty, tz), t0: performance.now(), dur: 280 };
 }
 function spawnFloater(pos, value, size) {
   const cv = document.createElement('canvas'); cv.width = cv.height = 256;
@@ -1016,6 +1406,7 @@ function finishRoll() {
   rolling = false;
   // pin every die: value is read and recorded, so nothing may creep afterwards
   activeDice.forEach(d => {
+    if (flatDot(d) < 0.995) { snapFlat(d); return; }  // never freeze a tilted die
     d.body.velocity.set(0, 0, 0);
     d.body.angularVelocity.set(0, 0, 0);
     d.body.allowSleep = true;
@@ -1068,6 +1459,8 @@ window.getTHREE = () => THREE;
 window.world = () => world;
 window.CANNON = CANNON;
 window.dieMat = () => dieMat;
+window.snapFlat = snapFlat;
+window.flatDot = flatDot;
 
 /* ---------------- loop ---------------- */
 const clock = new THREE.Clock();
@@ -1138,7 +1531,9 @@ function separateDice() {
     let moved = false;
     for (let i = 0; i < list.length; i++) for (let j = i+1; j < list.length; j++) {
       const a = list[i], b = list[j];
-      if (a.body.position.distanceTo(b.body.position) > 2.5) continue;
+      // distance gate scales with die size so big dice are still checked for overlap
+      const ra = a.info.rad || a.info.size || 0.6, rb = b.info.rad || b.info.size || 0.6;
+      if (a.body.position.distanceTo(b.body.position) > Math.max(2.5, (ra + rb) * 1.15)) continue;
       const ov = satOverlap(a, b);
       if (ov.depth > 0.005) {
         const amt = ov.depth * 0.55;
@@ -1186,27 +1581,38 @@ function physStep() {
       const settled = d.restFrames >= 6 || d.body.sleepState === 2 ||
                       (age > 4000 && d.restFrames >= 2) || age > 5500;
       if (settled) {
-        const v = readDie(d, false);
-        if (v != null) {
-          d.value = v; d.done = true;
-          d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
-          d.body.allowSleep = true; d.body.sleep();   // pin it: nothing may disturb the read
-        } else if (d.nudges < 3 && age < 5200) {
-          d.nudges++; nudgeDie(d);                    // cocked die — hop it free
-        } else {
-          d.value = readDie(d, true); d.done = true;  // give up nudging, take closest face
-          d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
-          d.body.allowSleep = true; d.body.sleep();
+        const dot = flatDot(d);
+        if (dot >= 0.995) {                       // flat on a face — read and pin
+          const v = readDie(d, false);
+          if (v != null) {
+            d.value = v; d.done = true;
+            d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
+            d.body.allowSleep = true; d.body.sleep();   // pin it: nothing may disturb the read
+          }
+        }
+        if (!d.done) {
+          if (d.nudges < 3 && age < 4200) {
+            d.nudges++;
+            if (dot < 0.95) nudgeDie(d);          // badly cocked — hop it free
+            else toppleNudge(d);                  // balanced on an edge — soft tap, it falls flat
+          } else {
+            snapFlat(d);                          // out of patience: settle it flat, smoothly
+          }
         }
       }
     }
-    d.mesh.position.copy(d.body.position);
-    d.mesh.quaternion.copy(d.body.quaternion);
+    if (!d.snap) {
+      d.mesh.position.copy(d.body.position);
+      d.mesh.quaternion.copy(d.body.quaternion);
+    }
   }
   if (rolling && (simTime - rollStart > 7000 || activeDice.every(d => d.done))) {
     separateDice();
     activeDice.forEach(d => {
-      if (d.value == null) d.value = readDie(d, true);
+      if (d.value == null) {
+        if (flatDot(d) < 0.995) { snapFlat(d); return; }  // settle flat, never frozen tilted
+        d.value = readDie(d, true);
+      }
       d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
       d.body.allowSleep = true; d.body.sleep();
     });
@@ -1221,9 +1627,22 @@ function animate() {
   for (let i = floaters.length - 1; i >= 0; i--) {
     const f = floaters[i];
     const age = (now - f.sprite.userData.born) / 1000;
-    if (age > 3) { scene.remove(f.sprite); floaters.splice(i, 1); continue; }
-    f.sprite.material.opacity = Math.min(1, (3 - age) / 1);
+    if (age > 4.5) { scene.remove(f.sprite); floaters.splice(i, 1); continue; }
+    f.sprite.material.opacity = Math.min(1, (4.5 - age) / 1);
     f.sprite.position.y += dt * 0.4;
+  }
+  // smooth flat-settle tweens (snapFlat): drive mesh + sleeping body by wall time
+  const nowMs = performance.now();
+  for (const d of activeDice) {
+    if (!d.snap) continue;
+    const s = Math.min(1, (nowMs - d.snap.t0) / d.snap.dur);
+    const e = 1 - Math.pow(1 - s, 3);
+    const qq = d.snap.q0.clone().slerp(d.snap.q1, e);
+    const pp = d.snap.p0.clone().lerp(d.snap.p1, e);
+    d.mesh.position.copy(pp); d.mesh.quaternion.copy(qq);
+    d.body.position.set(pp.x, pp.y, pp.z);
+    d.body.quaternion.set(qq.x, qq.y, qq.z, qq.w);
+    if (s >= 1) d.snap = null;
   }
   controls.update();
   renderer.render(scene, camera);
@@ -1237,8 +1656,6 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
-/* demo roll on load */
-setTimeout(roll, 400);
 </script>
 </body>
 </html>
