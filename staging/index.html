@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>STAGING Dice Table v1.2.21</title>
+<title>STAGING Dice Table v1.2.22</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -17,7 +17,26 @@
     color:#e8e4d8; box-shadow:0 8px 32px rgba(0,0,0,.5); z-index:10;
   }
   #panel h1 { font-size:19px; letter-spacing:.14em; text-transform:uppercase; color:#d9a441; margin-bottom:12px; font-weight:600; }
+  .phead { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; }
+  .phead h1 { margin-bottom:0; }
   #panel h1 #ver { font-size:11px; vertical-align:middle; color:#8a94a0; letter-spacing:.08em; margin-left:6px; }
+  #collapseBtn {
+    width:30px; height:30px; flex:0 0 30px; border-radius:8px; border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.05); color:#e8e4d8; font-size:15px; line-height:1; cursor:pointer; padding:0;
+  }
+  #collapseBtn:hover { background:rgba(255,255,255,.12); }
+  #panel { transition:transform .28s ease; }
+  #panel.collapsed { transform:translateX(calc(-100% - 24px)); }
+  #panelTab {
+    position:fixed; left:16px; top:16px; z-index:11; display:none; align-items:center; gap:7px;
+    padding:9px 14px; border-radius:999px; border:1px solid rgba(255,255,255,.14); cursor:pointer;
+    background:rgba(12,16,22,.84); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    color:#e8e4d8; font-size:13px; font-weight:600; letter-spacing:.06em; box-shadow:0 8px 32px rgba(0,0,0,.5);
+    transition:transform .28s ease, opacity .28s ease;
+  }
+  #panelTab:hover { background:rgba(28,34,44,.9); }
+  #panelTab .ic { color:#d9a441; font-size:14px; }
+  body.panel-hidden #panelTab { display:flex; }
   .lbl { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:#8a94a0; margin:10px 0 6px; }
   .types { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
   .types button {
@@ -75,13 +94,18 @@
   }
   @media (max-width:700px) {
     #panel { left:8px; right:8px; width:auto; top:auto; bottom:8px; max-height:46vh; padding:12px; }
+    #panel.collapsed { transform:translateY(calc(100% + 24px)); }
+    #panelTab { left:8px; top:auto; bottom:8px; }
   }
 </style>
 </head>
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.21</span></h1>
+  <div class="phead">
+    <h1>Dice Table <span id="ver">v1.2.22</span></h1>
+    <button id="collapseBtn" aria-label="Collapse panel" aria-expanded="true" title="Collapse panel">&lsaquo;</button>
+  </div>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -122,6 +146,7 @@
   <ul id="history"></ul>
   <div class="hint">Drag to orbit &middot; Scroll to zoom &middot; R or Space to roll</div>
 </div>
+<button id="panelTab" aria-label="Show Dice Table panel"><span class="ic">&#9776;</span> Dice</button>
 <div id="totalPop"></div>
 
 <script type="importmap">
@@ -1097,7 +1122,7 @@ function clack(impact) {
 /* ---------------- game state & UI ---------------- */
 let dieType = 6, count = 2, edgeMode = 2, weight = 1.0, gravityMul = 1.0, momentumMul = 1.0, sizeMul = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
 const EDGE_NAMES = ['None', 'Chamfer', 'Round'];
-window.__dbg = () => ({ weight, edgeMode, sizeMul, rolling, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice, floaters: floaters.length });
+window.__dbg = () => ({ weight, edgeMode, sizeMul, rolling, panelCollapsed, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice, floaters: floaters.length });
 let history = [];
 try { history = JSON.parse(localStorage.getItem('diceHistory') || '[]'); } catch (e) { history = []; }
 
@@ -1118,6 +1143,50 @@ const $roll = document.getElementById('roll');
 const $last = document.getElementById('last');
 const $hist = document.getElementById('history');
 const $totalPop = document.getElementById('totalPop');
+
+/* ------- panel collapse (click + swipe) ------- */
+const $panel = document.getElementById('panel');
+const $collapseBtn = document.getElementById('collapseBtn');
+const $panelTab = document.getElementById('panelTab');
+let panelCollapsed = false;
+function setPanelCollapsed(c) {
+  panelCollapsed = c;
+  $panel.classList.toggle('collapsed', c);
+  document.body.classList.toggle('panel-hidden', c);
+  $collapseBtn.textContent = c ? '\u203A' : '\u2039';
+  $collapseBtn.setAttribute('aria-expanded', String(!c));
+  $collapseBtn.setAttribute('aria-label', c ? 'Show Dice Table panel' : 'Collapse Dice Table panel');
+  try { localStorage.setItem('panelCollapsed', c ? '1' : '0'); } catch {}
+}
+$collapseBtn.addEventListener('click', () => setPanelCollapsed(!panelCollapsed));
+$panelTab.addEventListener('click', () => setPanelCollapsed(false));
+// swipe: left (or down on mobile) on the panel collapses; any flick on the tab restores.
+// pan-y lets history keep scrolling vertically while horizontal drags reach us as pointermove.
+$panel.style.touchAction = 'pan-y';
+let panelSwipe = null;
+const isMobileLayout = () => matchMedia('(max-width:700px)').matches;
+$panel.addEventListener('pointerdown', e => {
+  if (e.target.closest('input, button, #history')) return;
+  panelSwipe = { x: e.clientX, y: e.clientY, id: e.pointerId };
+});
+$panel.addEventListener('pointermove', e => {
+  if (!panelSwipe || e.pointerId !== panelSwipe.id) return;
+  const dx = e.clientX - panelSwipe.x, dy = e.clientY - panelSwipe.y;
+  const hit = (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) || (isMobileLayout() && dy > 60 && Math.abs(dy) > Math.abs(dx) * 1.4);
+  if (!hit) return;
+  const collapse = isMobileLayout() ? dy > 0 : dx < 0;
+  panelSwipe = null;
+  setPanelCollapsed(collapse);
+});
+for (const t of ['pointerup', 'pointercancel']) $panel.addEventListener(t, () => panelSwipe = null);
+let tabSwipe = null;
+$panelTab.addEventListener('pointerdown', e => tabSwipe = { x: e.clientX, y: e.clientY, id: e.pointerId });
+$panelTab.addEventListener('pointermove', e => {
+  if (!tabSwipe || e.pointerId !== tabSwipe.id) return;
+  if (Math.hypot(e.clientX - tabSwipe.x, e.clientY - tabSwipe.y) > 40) { tabSwipe = null; setPanelCollapsed(false); }
+});
+for (const t of ['pointerup', 'pointercancel']) $panelTab.addEventListener(t, () => tabSwipe = null);
+try { if (localStorage.getItem('panelCollapsed') === '1') setPanelCollapsed(true); } catch {}
 
 for (const s of [4, 6, 8, 10, 12, 20, 100]) {
   const b = document.createElement('button');
