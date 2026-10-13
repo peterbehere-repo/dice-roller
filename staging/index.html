@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>STAGING Dice Table v1.2.14</title>
+<title>STAGING Dice Table v1.2.18</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#0c1014; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; }
@@ -33,9 +33,9 @@
   #count { min-width:36px; text-align:center; font-size:19px; font-weight:700; }
   .row .lbl { margin:0 0 0 4px; }
   #weightRow { gap:10px; }
-  #edges, #weight, #gravity, #momentum { flex:1; height:6px; -webkit-appearance:none; appearance:none; background:rgba(255,255,255,.18); border-radius:3px; outline:none; cursor:pointer; }
+  #edges, #weight, #gravity, #momentum, #size { flex:1; height:6px; -webkit-appearance:none; appearance:none; background:rgba(255,255,255,.18); border-radius:3px; outline:none; cursor:pointer; }
   #edges::-webkit-slider-thumb, #weight::-webkit-slider-thumb, #gravity::-webkit-slider-thumb, #momentum::-webkit-slider-thumb, #size::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
-  #edges::-moz-range-thumb, #weight::-moz-range-thumb, #gravity::-moz-range-thumb, #momentum::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
+  #edges::-moz-range-thumb, #weight::-moz-range-thumb, #gravity::-moz-range-thumb, #momentum::-moz-range-thumb, #size::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#d9a441; border:2px solid #1a1206; }
   /* value spans get a FIXED width: text like "1×" vs "2.75×" must never resize the slider track */
   #edgesVal, #weightVal, #gravityVal, #momentumVal, #sizeVal { font-size:15px; font-weight:700; color:#e8e4d8; width:54px; flex:0 0 54px; text-align:right; }
   .row.disabled { opacity:.35; pointer-events:none; }
@@ -81,7 +81,7 @@
 <body>
 <div id="scene"></div>
 <div id="panel">
-  <h1>Dice Table <span id="ver">v1.2.17</span></h1>
+  <h1>Dice Table <span id="ver">v1.2.18</span></h1>
   <div class="lbl">Die type</div>
   <div class="types" id="types"></div>
   <div class="lbl">Count</div>
@@ -93,8 +93,8 @@
   </div>
   <div class="lbl">Edges</div>
   <div class="row" id="edgesRow">
-    <input id="edges" type="range" min="0" max="2" step="1" value="1">
-    <span id="edgesVal">Chamfer</span>
+    <input id="edges" type="range" min="0" max="2" step="1" value="2">
+    <span id="edgesVal">Round</span>
   </div>
   <div class="lbl">Size</div>
   <div class="row" id="sizeRow">
@@ -1095,7 +1095,7 @@ function clack(impact) {
 }
 
 /* ---------------- game state & UI ---------------- */
-let dieType = 6, count = 2, edgeMode = 1, weight = 1.0, gravityMul = 1.0, momentumMul = 1.0, sizeMul = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
+let dieType = 6, count = 2, edgeMode = 2, weight = 1.0, gravityMul = 1.0, momentumMul = 1.0, sizeMul = 1.0, rolling = false, settleFrames = 0, rollStart = 0, simTime = 0, simSpeed = 1, currentGBoost = 0;
 const EDGE_NAMES = ['None', 'Chamfer', 'Round'];
 window.__dbg = () => ({ weight, edgeMode, sizeMul, rolling, count: activeDice.map(d=>({x:d.body.position.x.toFixed(2),y:d.body.position.y.toFixed(2),z:d.body.position.z.toFixed(2)})), scene, camera, controls, renderer, world, meshes: activeDice.map(d=>d.mesh), dice: activeDice });
 let history = [];
